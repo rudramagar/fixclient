@@ -1,0 +1,18 @@
+fix:
+  default:
+    connection_type: initiator
+    begin_string: FIX.4.4
+    heartbeat_interval: 30
+    reset_on_logon: true
+    target_comp_id: EXCHANGE
+    host: 127.0.0.1
+  sessions:
+    - key: f01
+      port: 5003
+      sender_comp_id: SESSION01
+    - key: f02
+      port: 5003
+      sender_comp_id: SESSION02
+    - key: f03
+      port: 25000
+      sender_comp_id: SESSION03
