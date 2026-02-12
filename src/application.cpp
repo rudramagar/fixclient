@@ -1,4 +1,5 @@
 #include "application.h"
+#include "fix_parser.h"
 
 #include "config_parser.h"
 #include <cstdio>

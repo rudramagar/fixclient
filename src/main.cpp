@@ -47,7 +47,7 @@ int main(int argc, char** argv) {
                 if (std::strcmp(optarg, "test") == 0) {
                     args.is_test_mode = true;
                 } else {
-                    std::printf("--mode only supports: test\n");
+                    std::printf("Error: (-m|--mode) only supports: test\n");
                     return 1;
                 }
                 break;
