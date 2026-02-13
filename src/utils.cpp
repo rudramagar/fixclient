@@ -12,7 +12,7 @@ std::string get_utc_timestamp() {
     ::gettimeofday(&now, 0);
 
     tm utc_time;
-    ::gmtime_r(&now.tv_sec, &utc_tm);
+    ::gmtime_r(&now.tv_sec, &utc_time);
 
     char time_part[32];
     ::strftime(time_part, sizeof(time_part), "%Y%m%d-%H:%M:%S", &utc_time);
@@ -24,10 +24,12 @@ std::string get_utc_timestamp() {
     return std::string(timestamp);
 }
 
-std::string FixMessage::to_pipe_delimited(const std::string& fix) {
+std::string to_pipe_delimited(const std::string& fix) {
+    const char SOH = '\x01';
+
     std::string printable = fix;
     for (size_t i = 0; i < printable.size(); ++i) {
-        if (printable[i] == soh()) {
+        if (printable[i] == SOH) {
             printable[i] = '|';
         }
     }
@@ -39,7 +41,7 @@ bool find_tag_value(const std::string& msg, const char* tag_prefix, std::string&
 
     size_t pos = msg.find(tag_prefix);
     while (pos != std::string::npos) {
-        if (pos == 0 || msg[npos - 1] == SOH) {
+        if (pos == 0 || msg[pos - 1] == SOH) {
             break;
         }
         pos = msg.find(tag_prefix, pos + 1);
@@ -58,3 +60,6 @@ bool find_tag_value(const std::string& msg, const char* tag_prefix, std::string&
     value.assign(msg, value_start, value_end - value_start);
     return true;
 }
+
+}
+
