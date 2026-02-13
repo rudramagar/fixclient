@@ -111,8 +111,8 @@ bool FixParser::read_next_message(std::string& message) {
     }
 
     // Validate "10=" at the computed pos.
-    if (!(buffer[checksum_start + 0] == '1' && buffer[checksum_start + 1 && checksum_start + 2])) {
-        size_t next_start = buffer.find("8=FIX", 1);
+	if (checksum_start + 3 > buffer.size() || buffer.compare(checksum_start, 3, "10=") != 0) {
+		const size_t next_start = buffer.find("8=FIX", 1);
         if (next_start != std::string::npos) {
             buffer.erase(0, next_start);
         } else {

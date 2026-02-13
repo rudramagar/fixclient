@@ -89,7 +89,8 @@ int TcpSocket::receive_bytes(char* buf, size_t max_bytes) {
         return -1;
     }
 
-    size_t bytes_read = :: recv(sock_fd, buf, max_bytes, 0);
+    ssize_t bytes_read = ::recv(sock_fd, buf, max_bytes, 0);
+
     if (bytes_read > 0) {
         return static_cast<int>(bytes_read);
     }

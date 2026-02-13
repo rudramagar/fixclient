@@ -15,7 +15,7 @@ int Application::run(const AppArgs& args) {
         return 1;
     }
 
-    std::printf("Info: Connected to &=%s:%d\n", config.host.c_str(), config.port);
+    std::printf("Info: Connected to %s:%d\n", config.host.c_str(), config.port);
 
     socket.close();
     return 0;
