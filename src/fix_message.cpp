@@ -91,6 +91,7 @@ std::string FixMessage::build_message(const std::string& msg_type,
     return msg;
 }
 
+// Logon
 std::string FixMessage::build_logon(int msg_seq_num, const std::string& sending_time,
                                     int heartbeat_interval, bool reset_seq_num) const {
 
@@ -111,6 +112,96 @@ std::string FixMessage::build_logon(int msg_seq_num, const std::string& sending_
     }
 
     return build_message("A", msg_seq_num, sending_time, fields);
+}
+
+// HeartBeat
+std::string FixMessage::build_heartbeat(int msg_seq_num,
+                                        const std::string& sending_time,
+                                        const std::string& test_req_id) const {
+
+    FieldList fields;
+    fields.reserve(2);
+
+    // TestReqID
+    // only when replying
+    // to TestRequest
+    if (!test_req_id.empty()) {
+        fields.push_back(Field(112, test_req_id));
+    }
+
+    return build_message("0", msg_seq_num, sending_time, fields);
+}
+
+// TestRequest
+std::string FixMessage::build_test_request(int msg_seq_num,
+                                           const std::string& sending_time,
+                                           const std::string& test_req_id) const {
+
+    FieldList fields;
+    fields.reserve(2);
+
+    // TestReqID
+    fields.push_back(Field(112, test_req_id));
+
+    return build_message("1", msg_seq_num, sending_time, fields);
+}
+
+// ResendRequest
+std::string FixMessage::build_resend_request(int msg_seq_num,
+                                             const std::string& sending_time,
+                                             int begin_seq_no, int end_seq_no) const {
+
+    FieldList fields;
+    fields.reserve(2);
+
+    // BeginSeqNo (7)
+    // EndSeqNo (16)
+    char begin_seq_buf[32];
+    std::snprintf(begin_seq_buf, sizeof(begin_seq_buf), "%d", begin_seq_no);
+    fields.push_back(Field(7, begin_seq_buf));
+
+    char end_seq_buf[32];
+    std::snprintf(end_seq_buf, sizeof(end_seq_buf), "%d", end_seq_no);
+    fields.push_back(Field(16, end_seq_buf));
+
+    return build_message("2", msg_seq_num, sending_time, fields);
+}
+
+// Sequence Reset
+std::string FixMessage::build_sequence_reset(int msg_seq_num,
+                                             const std::string& sending_time,
+                                             int new_seq_no, bool gap_fill) const {
+
+    FieldList fields;
+    fields.reserve(4);
+
+    // NewSeqNo (36)
+    char new_seq_buf[32];
+    std::snprintf(new_seq_buf, sizeof(new_seq_buf), "%d", new_seq_no);
+    fields.push_back(Field(36, new_seq_buf));
+
+    // Gapfill
+    if (gap_fill) {
+        fields.push_back(Field(123, "Y"));
+    }
+
+    return build_message("4", msg_seq_num, sending_time, fields);
+}
+
+// Logout
+std::string FixMessage::build_logout(int msg_seq_num,
+                                     const std::string& sending_time,
+                                     const std::string& text) const {
+
+    FieldList fields;
+    fields.reserve(2);
+
+    // Text (58)
+    if (!text.empty()) {
+        fields.push_back(Field(58, text));
+    }
+
+    return build_message("5", msg_seq_num, sending_time, fields);
 }
 
 std::string FixMessage::to_pipe_delimited(const std::string& fix) {

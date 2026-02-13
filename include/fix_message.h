@@ -23,6 +23,33 @@ public:
     std::string build_logon(int msg_seq_num,
                             const std::string& sending_time,
                             int heart_bt_int, bool reset_seq_num) const;
+    
+    // 35=0 HeartBeat
+    std::string build_heartbeat(int msg_seq_num,
+                                const std::string& sending_time,
+                                const std::string& test_req_id) const;
+    // 35=1 TestRequest
+    std::string build_test_request(int msg_seq_num,
+                                   const std::string& sending_time,
+                                   const std::string& test_req_id) const;
+
+    // 35=2 ResendRequest
+    std::string build_resend_request(int msg_seq_num,
+                                     const std::string& sending_time,
+                                     int begin_seq_no, int end_seq_no) const;
+
+    // 35=4 SequenceReset
+    // 36 is required
+    // set gap_fill=true to add
+    // 123=Y
+    std::string build_sequence_reset(int msg_seq_num,
+                                     const std::string& sending_time,
+                                     int new_seq_no, bool gap_fill) const;
+
+    // 35=5 Logout
+    std::string build_logout(int msg_seq_num,
+                             const std::string& sending_time,
+                             const std::string& test) const;
 
     static std::string to_pipe_delimited(const std::string& fix);
 
