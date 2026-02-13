@@ -1,5 +1,5 @@
 #include "fix_message.h"
-
+#include "utils.h"
 #include <cstdio>
 
 FixMessage::FixMessage() {}
@@ -205,11 +205,5 @@ std::string FixMessage::build_logout(int msg_seq_num,
 }
 
 std::string FixMessage::to_pipe_delimited(const std::string& fix) {
-    std::string printable = fix;
-    for (size_t i = 0; i < printable.size(); ++i) {
-        if (printable[i] == soh()) {
-            printable[i] = '|';
-        }
-    }
-    return printable;
+    return utils::to_pipe_delimited(fix);
 }
