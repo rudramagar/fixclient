@@ -24,6 +24,15 @@ std::string get_utc_timestamp() {
     return std::string(timestamp);
 }
 
+uint64_t get_monotonic_millis() {
+    timespec ts;
+    ::clock_gettime(CLOCK_MONOTONIC, &ts);
+
+    const uint64_t sec_ms = static_cast<uint64_t>(ts.tv_sec) * 1000ULL;
+    const uint64_t nsec_ms = static_cast<uint64_t>(ts.tv_nsec) / 1000000ULL;
+    return sec_ms + nsec_ms;
+}
+
 std::string to_pipe_delimited(const std::string& fix) {
     const char SOH = '\x01';
 
