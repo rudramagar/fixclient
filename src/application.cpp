@@ -82,6 +82,7 @@ int Application::run(const AppArgs& args) {
             // Logon Ack
             if (!logon_accepted && msg_type == "A") {
                 logon_accepted = true;
+                std::printf("Info: Logon accepted\n");
                 continue;
             }
 
@@ -104,6 +105,17 @@ int Application::run(const AppArgs& args) {
             // Logout
             if (msg_type == "5") {
                 std::printf("Info: received Logout\n");
+
+                const std::string logout = fix.build_logout(outbound_seq,
+                                                            utils::get_utc_timestamp(),
+                                                            "");
+
+                if (!logout.empty()) {
+                    std::printf(">> %s\n", utils::to_pipe_delimited(logout).c_str());
+                    socket.send_bytes(logout);
+                    outbound_seq++;
+                }
+
                 socket.close();
                 return 0;
             }
