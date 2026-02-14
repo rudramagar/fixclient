@@ -6,6 +6,8 @@
 
 #include <cstdio>
 #include <string>
+#include <sys/select.h>
+#include <unistd.h>
 
 int Application::run(const AppArgs& args) {
     ConfigParser config_parser;
@@ -49,6 +51,7 @@ int Application::run(const AppArgs& args) {
 
     outbound_seq++;
 
+    bool logon_accepted = false;
     char recv_buf[4096];
     const int peer_closed = 0;
 
@@ -70,15 +73,21 @@ int Application::run(const AppArgs& args) {
         while (fix_parser.read_next_message(inbound_msg)) {
             std::printf("<< %s\n", utils::to_pipe_delimited(inbound_msg).c_str());
 
-            // If TestRequest (35=1)
-            // reply with HeartBeat (35=0)
-            // and same 112
+            // Read MessageType 
             std::string msg_type;
             if (!utils::find_tag_value(inbound_msg, "35=", msg_type)) {
                 continue;
             }
 
-            // TestRequest
+            // Logon Ack
+            if (!logon_accepted && msg_type == "A") {
+                logon_accepted = true;
+                continue;
+            }
+
+            // TestRequest (35=1)
+            // reply with HeartBeat (35=0)
+            // and same 112
             if (msg_type == "1") {
                 std::string test_req_id;
                 utils::find_tag_value(inbound_msg, "112=", test_req_id);
@@ -89,6 +98,7 @@ int Application::run(const AppArgs& args) {
                 std::printf(">> %s\n", utils::to_pipe_delimited(heartbeat).c_str());
                 socket.send_bytes(heartbeat);
                 outbound_seq++;
+                continue;
             }
 
             // Logout
@@ -96,6 +106,10 @@ int Application::run(const AppArgs& args) {
                 std::printf("Info: received Logout\n");
                 socket.close();
                 return 0;
+            }
+
+            if (!logon_accepted) {
+                continue;
             }
         }
     }
