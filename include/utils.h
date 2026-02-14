@@ -13,6 +13,7 @@ uint64_t get_monotonic_millis();
 
 std::string to_pipe_delimited(const std::string& fix);
 bool find_tag_value(const std::string& msg, const char* tag_prefix, std::string& value);
+std::string trim(const std::string& str);
 
 }
 

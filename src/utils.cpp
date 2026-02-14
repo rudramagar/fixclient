@@ -70,5 +70,13 @@ bool find_tag_value(const std::string& msg, const char* tag_prefix, std::string&
     return true;
 }
 
+std::string trim(const std::string& str) {
+    const size_t start_pos = str.find_first_not_of(" \t\r\n");
+    if (start_pos == std::string::npos) {
+        return "";
+    }
+    const size_t end_pos = str.find_last_not_of(" \t\r\n");
+    return str.substr(start_pos, end_pos - start_pos + 1);
 }
 
+}
