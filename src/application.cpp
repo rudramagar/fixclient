@@ -2,15 +2,18 @@
 #include "config_parser.h"
 #include "fix_parser.h"
 #include "fix_message.h"
+#include "fix_template.h"
 #include "utils.h"
-
 #include <cstdio>
 #include <string>
 #include <cstdint>
-
 #include <sys/socket.h>
 #include <sys/time.h>
 #include <errno.h>
+#include <sys/stat.h>
+#include <dirent.h>
+#include <vector>
+#include <algorithm>
 
 const int peer_closed = 0;
 const size_t receive_buffer_size = 4096;
@@ -98,6 +101,66 @@ static bool process_inbound_message(TcpSocket& socket,
 
         stop_requested = true;
         return true;
+    }
+
+    return true;
+}
+
+// load custom
+// RAW FIX messages
+// from template file
+static bool run_scenarios(TcpSocket& socket, FixMessage& fix,
+                          const SessionConfig& config,
+                          const std::string& scenario_path, int& outbound_seq,
+                          uint64_t& last_send_ms) {
+
+    std::vector<std::string> files;
+
+    DIR* dir = ::opendir(scenario_path.c_str());
+    if (dir) {
+        dirent* entry = 0;
+        while ((entry = ::readdir(dir)) != 0) {
+            const std::string name(entry->d_name);
+            if (name == "." || name == "..") {
+                continue;
+            }
+            files.push_back(scenario_path + "/" + name);
+        }
+
+        ::closedir(dir);
+        std::sort(files.begin(), files.end());
+    } else {
+        files.push_back(scenario_path);
+    }
+
+    for (size_t i = 0; i < files.size(); i++) {
+        const std::string& file_path = files[i];
+
+        FixTemplateMessage template_message;
+        if (!fix_template_load(file_path, template_message)) {
+            std::printf("ERROR: Scenario load failed: %s\n", file_path.c_str());
+            continue;
+        }
+
+        FixTemplateRuntime runtime;
+        runtime.begin_string = config.begin_string;
+        runtime.sender_comp_id = config.sender_comp_id;
+        runtime.target_comp_id = config.target_comp_id;
+        runtime.msg_seq_num = outbound_seq;
+        runtime.sending_time_utc = utils::get_utc_timestamp();
+
+        fix_template_apply(runtime, template_message);
+
+        const std::string raw_fix = fix.build_from_fields(template_message.fields);
+
+        std::printf("INFO: Sending scenario: %s\n", file_path.c_str());
+
+        if (!send_fix_message(socket, raw_fix, last_send_ms)) {
+            std::printf("ERROR: Send failed for scenario: %s\n", file_path.c_str());
+            return false;
+        }
+
+        outbound_seq++;
     }
 
     return true;
@@ -225,9 +288,14 @@ int Application::run(const AppArgs& args) {
         }
     }
 
+    // Send Scenarios after logon is accepted
+    if (!run_scenarios(socket, fix, config, args.scenario_path, outbound_seq, last_send_ms)) {
+        socket.close();
+        return 1;
+    }
+
     // Main loop: keepalive + admin message handling
     logon_accepted = true;
-
     while (true) {
         const uint64_t now_ms = utils::get_monotonic_millis();
 
