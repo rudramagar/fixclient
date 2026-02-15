@@ -3,6 +3,7 @@
 #include "fix_parser.h"
 #include "fix_message.h"
 #include "fix_template.h"
+#include "token_handler.h"
 #include "utils.h"
 #include <cstdio>
 #include <string>
@@ -62,7 +63,8 @@ static bool process_inbound_message(TcpSocket& socket,
                                     bool& scenario_response_started,
                                     uint64_t& last_scenario_response_ms,
                                     bool& logout_initiated,
-                                    uint64_t& logout_start_ms) {
+                                    uint64_t& logout_start_ms,
+                                    const std::string& token_path) {
 
     std::printf("<< %s\n", utils::to_pipe_delimited(inbound_message).c_str());
 
@@ -105,6 +107,7 @@ static bool process_inbound_message(TcpSocket& socket,
         }
 
         outbound_seq++;
+        save_token(token_path, outbound_seq);
         return true;
     }
 
@@ -119,6 +122,7 @@ static bool process_inbound_message(TcpSocket& socket,
 
             send_fix_message(socket, logout, last_send_ms);
             outbound_seq++;
+            save_token(token_path, outbound_seq);
         }
 
         stop_requested = true;
@@ -134,7 +138,8 @@ static bool process_inbound_message(TcpSocket& socket,
 static bool run_scenarios(TcpSocket& socket, FixMessage& fix,
                           const SessionConfig& config,
                           const std::string& scenario_path, int& outbound_seq,
-                          uint64_t& last_send_ms, bool& scenarios_sent) {
+                          uint64_t& last_send_ms, bool& scenarios_sent,
+                          const std::string& token_path) {
 
     scenarios_sent = false;
     std::vector<std::string> files;
@@ -191,6 +196,7 @@ static bool run_scenarios(TcpSocket& socket, FixMessage& fix,
 
         scenarios_sent = true;
         outbound_seq++;
+        save_token(token_path, outbound_seq);
     }
 
     return true;
@@ -246,6 +252,23 @@ int Application::run(const AppArgs& args) {
 
     int outbound_seq = 1;
 
+    // Read Token(Sequence)
+    // form file
+    const std::string now_utc = utils::get_utc_timestamp();
+    std::string token_path;
+
+    if (!read_token("tokens",
+                    config.sender_comp_id,
+                    now_utc,
+                    config.reset_on_logon,
+                    outbound_seq,
+                    token_path)) {
+        
+        std::printf("ERROR: Token read failed\n");
+        socket.close();
+        return 1;
+    }
+
     //scenario logout state
     bool scenarios_sent = false;
     bool logout_initiated = false;
@@ -272,6 +295,7 @@ int Application::run(const AppArgs& args) {
     }
 
     outbound_seq++;
+    save_token(token_path, outbound_seq);
 
     // Wait for Logon Ack (35=A)
     const uint64_t logon_start_ms = utils::get_monotonic_millis();
@@ -317,7 +341,7 @@ int Application::run(const AppArgs& args) {
             if (!process_inbound_message(socket, fix, outbound_seq, last_send_ms,
                                          inbound_message, logon_accepted, stop_requested,
                                          scenarios_sent, scenario_response_started, last_scenario_response_ms,
-                                         logout_initiated, logout_start_ms)) {
+                                         logout_initiated, logout_start_ms, token_path)) {
                 socket.close();
                 return 1;
             }
@@ -334,7 +358,7 @@ int Application::run(const AppArgs& args) {
     }
 
     // Send Scenarios after logon is accepted
-    if (!run_scenarios(socket, fix, config, args.scenario_path, outbound_seq, last_send_ms, scenarios_sent)) {
+    if (!run_scenarios(socket, fix, config, args.scenario_path, outbound_seq, last_send_ms, scenarios_sent, token_path)) {
         socket.close();
         return 1;
     }
@@ -355,6 +379,7 @@ int Application::run(const AppArgs& args) {
                 }
 
                 outbound_seq++;
+                save_token(token_path, outbound_seq);
                 logout_initiated = true;
                 logout_start_ms = now_ms;
             }
@@ -389,6 +414,7 @@ int Application::run(const AppArgs& args) {
                     }
 
                     outbound_seq++;
+                    save_token(token_path, outbound_seq);
                     test_request_sent_ms = utils::get_monotonic_millis();
                 }
             }
@@ -404,6 +430,7 @@ int Application::run(const AppArgs& args) {
                 }
 
                 outbound_seq++;
+                save_token(token_path, outbound_seq);
             }
         }
 
@@ -434,7 +461,7 @@ int Application::run(const AppArgs& args) {
             if (!process_inbound_message(socket, fix, outbound_seq, last_send_ms,
                                          inbound_message, logon_accepted, stop_requested,
                                          scenarios_sent, scenario_response_started, last_scenario_response_ms,
-                                         logout_initiated, logout_start_ms)) {
+                                         logout_initiated, logout_start_ms, token_path)) {
                 socket.close();
                 return 1;
             }
