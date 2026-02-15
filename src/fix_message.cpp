@@ -204,6 +204,41 @@ std::string FixMessage::build_logout(int msg_seq_num,
     return build_message("5", msg_seq_num, sending_time, fields);
 }
 
+// Build from fields
+std::string FixMessage::build_from_fields(const FieldList& ordered_fields) const {
+    if (begin_string.empty()) {
+        return std::string();
+    }
+
+    std::string body;
+    body.reserve(256);
+
+    for (size_t i = 0; i < ordered_fields.size(); ++i) {
+        const int tag = ordered_fields[i].first;
+
+        // Always rebuilds
+        if (tag == 8 || tag == 9 || tag == 10) {
+            continue;
+        }
+
+        append_field(body, tag, ordered_fields[i].second);
+    }
+
+    std::string msg;
+    msg.reserve(64 + body.size() + 16);
+
+    append_field(msg, 8, begin_string);
+    append_field_int(msg, 9, static_cast<int>(body.size()));
+    msg.append(body);
+
+    const int checksum = calculate_checksum(msg);
+    char checksum_buf[16];
+    std::snprintf(checksum_buf, sizeof(checksum_buf), "%03d", checksum);
+    append_field(msg, 10, checksum_buf);
+
+    return msg;
+}
+
 std::string FixMessage::to_pipe_delimited(const std::string& fix) {
     return utils::to_pipe_delimited(fix);
 }

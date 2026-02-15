@@ -53,6 +53,10 @@ public:
 
     static std::string to_pipe_delimited(const std::string& fix);
 
+    // Build a FIX message from already-ordered fields
+    // Ignores any 8/9/10 in the file and rebuilds
+    std::string build_from_fields(const FieldList& ordered_fields) const;
+
 private:
     std::string begin_string;
     std::string sender_comp_id;
