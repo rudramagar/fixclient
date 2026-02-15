@@ -34,11 +34,32 @@ static bool parse_fix_tag(const std::string& tag_text, int& tag_value) {
 
 // For ClordID(11)
 // PREF + EPOS_MS + COUNTER (eg. CL1100..)
-static std::string make_unique_id(const char* prefix, uint64_t base_ms, int counter) {
-    char buf[64];
-    std::snprintf(buf, sizeof(buf), "%s%llu-%d", prefix,
-                  static_cast<unsigned long long>(base_ms), counter);
+static std::string make_unique_id(const char* prefix,
+                                  const std::string& sending_time_utc,
+                                  int msg_seq_num,
+                                  int counter) {
+    char digits[32];
+    size_t digits_len = 0;
 
+    for (size_t i = 0; i < sending_time_utc.size() && digits_len + 1 < sizeof(digits); ++i) {
+        char ch = sending_time_utc[i];
+        if (ch >= '0' && ch <= '9') {
+            digits[digits_len++] = ch;
+        }
+    }
+    digits[digits_len] = '\0';
+
+    const size_t keep = 11;
+    const char* time_part = digits;
+    if (digits_len > keep) {
+        time_part = digits + (digits_len - keep);
+    }
+
+    const int seq_part = (msg_seq_num < 0) ? 0 : (msg_seq_num % 10000);
+    const int count_part = (counter < 0) ? 0 : (counter % 100);
+
+    char buf[64];
+    std::snprintf(buf, sizeof(buf), "%s%s%04d%02d", prefix, time_part, seq_part, count_part);
     return std::string(buf);
 }
 
@@ -103,65 +124,73 @@ bool fix_template_load(const std::string& file_path,FixTemplateMessage& template
 }
 
 bool fix_template_apply(const FixTemplateRuntime& runtime,
-						FixTemplateMessage& template_message) {
-
-	const uint64_t base_ms = utils::get_monotonic_millis();
-    int clord_count = 0;
-    int cross_count = 0;
+                        FixTemplateMessage& template_message) {
 
     bool is_set_begin_string = false;
-    bool is_set_sender_comp_id = false;
-    bool is_set_target_comp_id = false;
-    bool is_set_msg_seq_num = false;
-    bool is_set_sending_time = false;
+    bool is_set_sender = false;
+    bool is_set_target = false;
+    bool is_set_seq = false;
+    bool is_set_time = false;
 
+    // Overwrite header/runtime fields
+	// and fill 60 if blank
     for (size_t i = 0; i < template_message.fields.size(); i++) {
         const int tag_value = template_message.fields[i].first;
         std::string& value_text = template_message.fields[i].second;
 
-        // Overwrite first occurrence only (if present)
         if (tag_value == 8 && !is_set_begin_string) {
             value_text = runtime.begin_string;
             is_set_begin_string = true;
             continue;
         }
-        if (tag_value == 49 && !is_set_sender_comp_id) {
+        if (tag_value == 49 && !is_set_sender) {
             value_text = runtime.sender_comp_id;
-            is_set_sender_comp_id = true;
+            is_set_sender = true;
             continue;
         }
-        if (tag_value == 56 && !is_set_target_comp_id) {
+        if (tag_value == 56 && !is_set_target) {
             value_text = runtime.target_comp_id;
-            is_set_target_comp_id = true;
+            is_set_target = true;
             continue;
         }
-        if (tag_value == 34 && !is_set_msg_seq_num) {
+        if (tag_value == 34 && !is_set_seq) {
             value_text = std::to_string(runtime.msg_seq_num);
-            is_set_msg_seq_num = true;
+            is_set_seq = true;
             continue;
         }
-        if (tag_value == 52 && !is_set_sending_time) {
+        if (tag_value == 52 && !is_set_time) {
             value_text = runtime.sending_time_utc;
-            is_set_sending_time = true;
+            is_set_time = true;
             continue;
         }
 
-        // Fill blanks only
         if (tag_value == 60 && value_text.empty()) {
             value_text = runtime.sending_time_utc;
             continue;
         }
-        if (tag_value == 11 && value_text.empty()) {
-            clord_count++;
-            value_text = make_unique_id("CL", base_ms, clord_count);
+    }
+
+    // ALWAYS overwrite CrossID, ClordID
+	// (ignore template values)
+    int clord_counter = 0;
+    int cross_counter = 0;
+
+    for (size_t i = 0; i < template_message.fields.size(); i++) {
+        const int tag_value = template_message.fields[i].first;
+        std::string& value_text = template_message.fields[i].second;
+
+        if (tag_value == 11) {
+            clord_counter++;
+            value_text = make_unique_id("CL", runtime.sending_time_utc, runtime.msg_seq_num, clord_counter);
             continue;
         }
-        if (tag_value == 548 && value_text.empty()) {
-            cross_count++;
-            value_text = make_unique_id("X", base_ms, cross_count);
+
+        if (tag_value == 548) {
+            cross_counter++;
+            value_text = make_unique_id("X", runtime.sending_time_utc, runtime.msg_seq_num, cross_counter);
             continue;
         }
     }
 
-	return true;
+    return true;
 }
