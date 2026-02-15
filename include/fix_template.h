@@ -1,5 +1,5 @@
-#ifndef FIX_TEMPLATE
-#define FIX_TEMPLATE
+#ifndef FIX_TEMPLATE_H
+#define FIX_TEMPLATE_H
 
 #include "fix_message.h"
 #include <string>
@@ -8,7 +8,7 @@
 struct FixTemplateMessage {
     std::string msg_type;
     FixMessage::FieldList fields;
-}
+};
 
 struct FixTemplateRuntime {
     std::string begin_string;
@@ -20,10 +20,12 @@ struct FixTemplateRuntime {
 
 bool fix_template_load(
         const std::string& file_path, 
-        FixTemplateMessage& template_message,
+        FixTemplateMessage& template_message
 );
 
-bool fix_template_appy(
+bool fix_template_apply(
         const FixTemplateRuntime& runtime,
-        FixTemplateMessage& template_message,
+        FixTemplateMessage& template_message
 );
+
+#endif

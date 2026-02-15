@@ -44,9 +44,7 @@ static std::string make_unique_id(const char* prefix, uint64_t base_ms, int coun
 
 // Parse RAW FIX
 static bool parse_raw_fix_line(const std::string& raw_line,
-							   FixMessage::FieldList& field_list,
-							   std::string& error_message) {
-	
+							   FixMessage::FieldList& field_list) {
 	field_list.clear();
 
     size_t pos = 0;
@@ -73,7 +71,6 @@ static bool parse_raw_fix_line(const std::string& raw_line,
     }
 
     if (field_list.empty()) {
-        error_message = "INFO: No fields parsed from custom FIX message";
         return false;
     }
 
@@ -94,7 +91,7 @@ bool fix_template_load(const std::string& file_path,FixTemplateMessage& template
         if (is_ignored_line(line_text)) continue;
 
         FixMessage::FieldList field_list;
-        if (!parse_raw_fix_line(utils::trim(line_text), field_list, error_message)) {
+        if (!parse_raw_fix_line(utils::trim(line_text), field_list)) {
             return false;
         }
 
