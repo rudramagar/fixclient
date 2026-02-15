@@ -59,6 +59,8 @@ static bool process_inbound_message(TcpSocket& socket,
                                     bool& logon_accepted,
                                     bool& stop_requested,
                                     bool scenarios_sent,
+                                    bool& scenario_response_started,
+                                    uint64_t& last_scenario_response_ms,
                                     bool& logout_initiated,
                                     uint64_t& logout_start_ms) {
 
@@ -79,19 +81,13 @@ static bool process_inbound_message(TcpSocket& socket,
     // Initiate Logout Handsake
     // after scenario finished
     if (scenarios_sent && !logout_initiated) {
-        if (msg_type != "0" && msg_type != "1" && msg_type != "2" &&
-            msg_type != "4" && msg_type != "A" && msg_type != "5") {
+        const bool is_admin_msg =
+            (msg_type == "0" || msg_type == "1" || msg_type == "2" ||
+             msg_type == "4" || msg_type == "A" || msg_type == "5");
 
-            const std::string logout = fix.build_logout(outbound_seq,utils::get_utc_timestamp(), "");
-
-            if (!send_fix_message(socket, logout, last_send_ms)) {
-                return false;
-            }
-
-            outbound_seq++;
-            logout_initiated = true;
-            logout_start_ms = utils::get_monotonic_millis();
-            return true;
+        if (scenarios_sent && !is_admin_msg) {
+            scenario_response_started = true;
+            last_scenario_response_ms = utils::get_monotonic_millis();
         }
     }
 
@@ -255,6 +251,13 @@ int Application::run(const AppArgs& args) {
     bool logout_initiated = false;
     uint64_t logout_start_ms = 0;
 
+    // Wait to send logout
+    // before receiving
+    // all response
+    bool scenario_response_started = false;
+    uint64_t last_scenario_response_ms = 0;
+    const uint64_t scenario_quiet_ms = 300ULL;
+
     char receive_buffer[receive_buffer_size];
 
     // Send Logon
@@ -313,7 +316,8 @@ int Application::run(const AppArgs& args) {
 
             if (!process_inbound_message(socket, fix, outbound_seq, last_send_ms,
                                          inbound_message, logon_accepted, stop_requested,
-                                         scenarios_sent, logout_initiated, logout_start_ms)) {
+                                         scenarios_sent, scenario_response_started, last_scenario_response_ms,
+                                         logout_initiated, logout_start_ms)) {
                 socket.close();
                 return 1;
             }
@@ -339,6 +343,22 @@ int Application::run(const AppArgs& args) {
     logon_accepted = true;
     while (true) {
         const uint64_t now_ms = utils::get_monotonic_millis();
+
+        // Check if there is no response
+        // initate logout
+        if (!logout_initiated && scenarios_sent && scenario_response_started) {
+            if (now_ms - last_scenario_response_ms >= scenario_quiet_ms) {
+                const std::string logout = fix.build_logout(outbound_seq, utils::get_utc_timestamp(), "");
+
+                if (!send_fix_message(socket, logout, last_send_ms)) {
+                    break;
+                }
+
+                outbound_seq++;
+                logout_initiated = true;
+                logout_start_ms = now_ms;
+            }
+        }
 
         if (logout_initiated) {
             if (now_ms - logout_start_ms >= 2000ULL) {
@@ -413,7 +433,8 @@ int Application::run(const AppArgs& args) {
 
             if (!process_inbound_message(socket, fix, outbound_seq, last_send_ms,
                                          inbound_message, logon_accepted, stop_requested,
-                                         scenarios_sent, logout_initiated, logout_start_ms)) {
+                                         scenarios_sent, scenario_response_started, last_scenario_response_ms,
+                                         logout_initiated, logout_start_ms)) {
                 socket.close();
                 return 1;
             }
