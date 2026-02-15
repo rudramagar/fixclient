@@ -57,7 +57,11 @@ static bool process_inbound_message(TcpSocket& socket,
                                     uint64_t& last_send_ms,
                                     const std::string& inbound_message,
                                     bool& logon_accepted,
-                                    bool& stop_requested) {
+                                    bool& stop_requested,
+                                    bool scenarios_sent,
+                                    bool& logout_initiated,
+                                    uint64_t& logout_start_ms) {
+
     std::printf("<< %s\n", utils::to_pipe_delimited(inbound_message).c_str());
 
     std::string msg_type;
@@ -70,6 +74,25 @@ static bool process_inbound_message(TcpSocket& socket,
         logon_accepted = true;
         std::printf("Info: Logon accepted\n");
         return true;
+    }
+
+    // Initiate Logout Handsake
+    // after scenario finished
+    if (scenarios_sent && !logout_initiated) {
+        if (msg_type != "0" && msg_type != "1" && msg_type != "2" &&
+            msg_type != "4" && msg_type != "A" && msg_type != "5") {
+
+            const std::string logout = fix.build_logout(outbound_seq,utils::get_utc_timestamp(), "");
+
+            if (!send_fix_message(socket, logout, last_send_ms)) {
+                return false;
+            }
+
+            outbound_seq++;
+            logout_initiated = true;
+            logout_start_ms = utils::get_monotonic_millis();
+            return true;
+        }
     }
 
     // TestRequest (35=1) -> Heartbeat (35=0) with same 112 (if present)
@@ -93,11 +116,14 @@ static bool process_inbound_message(TcpSocket& socket,
     if (msg_type == "5") {
         std::printf("Info: received logout\n");
 
-        const std::string logout = fix.build_logout(outbound_seq,
+        if (!logout_initiated) {
+            const std::string logout = fix.build_logout(outbound_seq,
                                                     utils::get_utc_timestamp(),
                                                     "");
-        send_fix_message(socket, logout, last_send_ms);
-        outbound_seq++;
+
+            send_fix_message(socket, logout, last_send_ms);
+            outbound_seq++;
+        }
 
         stop_requested = true;
         return true;
@@ -112,8 +138,9 @@ static bool process_inbound_message(TcpSocket& socket,
 static bool run_scenarios(TcpSocket& socket, FixMessage& fix,
                           const SessionConfig& config,
                           const std::string& scenario_path, int& outbound_seq,
-                          uint64_t& last_send_ms) {
+                          uint64_t& last_send_ms, bool& scenarios_sent) {
 
+    scenarios_sent = false;
     std::vector<std::string> files;
 
     DIR* dir = ::opendir(scenario_path.c_str());
@@ -160,6 +187,7 @@ static bool run_scenarios(TcpSocket& socket, FixMessage& fix,
             return false;
         }
 
+        scenarios_sent = true;
         outbound_seq++;
     }
 
@@ -215,6 +243,12 @@ int Application::run(const AppArgs& args) {
     int test_request_counter = 1;
 
     int outbound_seq = 1;
+
+    //scenario logout state
+    bool scenarios_sent = false;
+    bool logout_initiated = false;
+    uint64_t logout_start_ms = 0;
+
     char receive_buffer[receive_buffer_size];
 
     // Send Logon
@@ -272,7 +306,8 @@ int Application::run(const AppArgs& args) {
             bool stop_requested = false;
 
             if (!process_inbound_message(socket, fix, outbound_seq, last_send_ms,
-                                         inbound_message, logon_accepted, stop_requested)) {
+                                         inbound_message, logon_accepted, stop_requested,
+                                         scenarios_sent, logout_initiated, logout_start_ms)) {
                 socket.close();
                 return 1;
             }
@@ -289,7 +324,7 @@ int Application::run(const AppArgs& args) {
     }
 
     // Send Scenarios after logon is accepted
-    if (!run_scenarios(socket, fix, config, args.scenario_path, outbound_seq, last_send_ms)) {
+    if (!run_scenarios(socket, fix, config, args.scenario_path, outbound_seq, last_send_ms, scenarios_sent)) {
         socket.close();
         return 1;
     }
@@ -299,43 +334,51 @@ int Application::run(const AppArgs& args) {
     while (true) {
         const uint64_t now_ms = utils::get_monotonic_millis();
 
-        // TestRequest timeout check
-        if (test_request_sent_ms != 0) {
-            if (now_ms - test_request_sent_ms >= heartbeat_interval_ms) {
-                std::printf("Error: TestRequest timeout\n");
+        if (logout_initiated) {
+            if (now_ms - logout_start_ms >= 2000ULL) {
+                std::printf("Info: logout wait timeout, closing\n");
                 break;
             }
-        } else {
-            // No inbound for interval -> send TestRequest
-            if (now_ms - last_recv_ms >= heartbeat_interval_ms) {
-                char test_req_id_buf[32];
-                std::snprintf(test_req_id_buf, sizeof(test_req_id_buf), "TR%d", test_request_counter++);
-                const std::string test_req_id(test_req_id_buf);
+        }
+        else {
+            // TestRequest timeout check
+            if (test_request_sent_ms != 0) {
+                if (now_ms - test_request_sent_ms >= heartbeat_interval_ms) {
+                    std::printf("Error: TestRequest timeout\n");
+                    break;
+                }
+            } else {
+                // No inbound for interval -> send TestRequest
+                if (now_ms - last_recv_ms >= heartbeat_interval_ms) {
+                    char test_req_id_buf[32];
+                    std::snprintf(test_req_id_buf, sizeof(test_req_id_buf), "TR%d", test_request_counter++);
+                    const std::string test_req_id(test_req_id_buf);
 
-                const std::string test_request = fix.build_test_request(outbound_seq,
-                                                                        utils::get_utc_timestamp(),
-                                                                        test_req_id);
+                    const std::string test_request = fix.build_test_request(outbound_seq,
+                                                                            utils::get_utc_timestamp(),
+                                                                            test_req_id);
 
-                if (!send_fix_message(socket, test_request, last_send_ms)) {
+                    if (!send_fix_message(socket, test_request, last_send_ms)) {
+                        break;
+                    }
+
+                    outbound_seq++;
+                    test_request_sent_ms = utils::get_monotonic_millis();
+                }
+            }
+
+            // No outbound for interval -> send Heartbeat
+            if (now_ms - last_send_ms >= heartbeat_interval_ms) {
+                const std::string heartbeat = fix.build_heartbeat(outbound_seq,
+                                                                  utils::get_utc_timestamp(),
+                                                                  "");
+
+                if (!send_fix_message(socket, heartbeat, last_send_ms)) {
                     break;
                 }
 
                 outbound_seq++;
-                test_request_sent_ms = utils::get_monotonic_millis();
             }
-        }
-
-        // No outbound for interval -> send Heartbeat
-        if (now_ms - last_send_ms >= heartbeat_interval_ms) {
-            const std::string heartbeat = fix.build_heartbeat(outbound_seq,
-                                                              utils::get_utc_timestamp(),
-                                                              "");
-
-            if (!send_fix_message(socket, heartbeat, last_send_ms)) {
-                break;
-            }
-
-            outbound_seq++;
         }
 
         const int bytes_received = socket.receive_bytes(receive_buffer, sizeof(receive_buffer));
@@ -363,7 +406,8 @@ int Application::run(const AppArgs& args) {
             bool stop_requested = false;
 
             if (!process_inbound_message(socket, fix, outbound_seq, last_send_ms,
-                                         inbound_message, logon_accepted, stop_requested)) {
+                                         inbound_message, logon_accepted, stop_requested,
+                                         scenarios_sent, logout_initiated, logout_start_ms)) {
                 socket.close();
                 return 1;
             }
