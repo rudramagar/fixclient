@@ -151,6 +151,12 @@ static bool run_scenarios(TcpSocket& socket, FixMessage& fix,
             if (name == "." || name == "..") {
                 continue;
             }
+
+            // Ignore hidden files and folder
+            if (!name.empty() && name[0] == '.') {
+                continue;
+            }
+
             files.push_back(scenario_path + "/" + name);
         }
 
