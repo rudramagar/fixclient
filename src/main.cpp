@@ -11,7 +11,7 @@ static void usage(const char* program_name) {
             " -u <session>          session name (f01)\n"
             " -c <config>           config file (default: config/config.yaml)\n"
             " -s <scenario>         scenario file or directory (default: scenarios)\n"
-            " -m, --mode test           validates expected scenarios\n"
+            " -m, --mode test       validates expected scenarios\n"
             " -h, --help            show help\n",
             program_name
     );
