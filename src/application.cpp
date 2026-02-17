@@ -15,6 +15,7 @@
 #include <dirent.h>
 #include <vector>
 #include <algorithm>
+#include <fstream>
 
 const int peer_closed = 0;
 const size_t receive_buffer_size = 4096;
@@ -170,9 +171,8 @@ static bool run_scenarios(TcpSocket& socket, FixMessage& fix,
     for (size_t i = 0; i < files.size(); i++) {
         const std::string& file_path = files[i];
 
-        FixTemplateMessage template_message;
-        if (!fix_template_load(file_path, template_message)) {
-            std::printf("ERROR: Scenario load failed: %s\n", file_path.c_str());
+        std::ifstream in(file_path.c_str());
+        if (!in.is_open()) {
             continue;
         }
 
@@ -180,23 +180,73 @@ static bool run_scenarios(TcpSocket& socket, FixMessage& fix,
         runtime.begin_string = config.begin_string;
         runtime.sender_comp_id = config.sender_comp_id;
         runtime.target_comp_id = config.target_comp_id;
-        runtime.msg_seq_num = outbound_seq;
-        runtime.sending_time_utc = utils::get_utc_timestamp();
+        runtime.msg_seq_num = 0;
+        runtime.sending_time_utc.clear();
+        runtime.state.org_clord_id.clear();
 
-        fix_template_apply(runtime, template_message);
+        std::string line;
+        while (std::getline(in, line)) {
+            line = utils::trim(line);
+            if (line.empty() || line[0] == '#') {
+                continue;
+            }
 
-        const std::string raw_fix = fix.build_from_fields(template_message.fields);
+            FixTemplateMessage template_message;
+            template_message.msg_type.clear();
+            template_message.fields.clear();
 
-        std::printf("INFO: Sending scenario: %s\n", file_path.c_str());
+            // Parse RAW messages
+            size_t pos = 0;
+            while (pos < line.size()) {
+                size_t end = line.find('|', pos);
+                if (end == std::string::npos) {
+                    end = line.size();
+                }
 
-        if (!send_fix_message(socket, raw_fix, last_send_ms)) {
-            std::printf("ERROR: Send failed for scenario: %s\n", file_path.c_str());
-            return false;
+                const std::string field_text = line.substr(pos, end - pos);
+                pos = (end < line.size()) ? (end + 1) : end;
+
+                if (field_text.empty()) {
+                    continue;
+                }
+
+                const size_t eq = field_text.find('=');
+                if (eq == std::string::npos) {
+                    continue;
+                }
+
+                const std::string tag_text = field_text.substr(0, eq);
+                const std::string value_text = field_text.substr(eq + 1);
+
+                const int tag_value = std::atoi(tag_text.c_str());
+                if (tag_value <= 0) {
+                    continue;
+                }
+
+                template_message.fields.push_back(std::make_pair(tag_value, value_text));
+                if (tag_value == 35 && template_message.msg_type.empty()) {
+                    template_message.msg_type = value_text;
+                }
+            }
+
+            if (template_message.fields.empty()) {
+                continue;
+            }
+
+            runtime.msg_seq_num = outbound_seq;
+            runtime.sending_time_utc = utils::get_utc_timestamp();
+
+            fix_template_apply(runtime, template_message);
+            const std::string raw_fix = fix.build_from_fields(template_message.fields);
+
+            if (!send_fix_message(socket, raw_fix, last_send_ms)) {
+                return false;
+            }
+
+            scenarios_sent = true;
+            outbound_seq++;
+            save_token(token_path, outbound_seq);
         }
-
-        scenarios_sent = true;
-        outbound_seq++;
-        save_token(token_path, outbound_seq);
     }
 
     return true;
