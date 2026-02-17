@@ -65,8 +65,8 @@ static std::string make_unique_id(const char* prefix,
 
 // Parse RAW FIX
 static bool parse_raw_fix_line(const std::string& raw_line,
-							   FixMessage::FieldList& field_list) {
-	field_list.clear();
+                               FixMessage::FieldList& field_list) {
+    field_list.clear();
 
     size_t pos = 0;
     while (pos <= raw_line.size()) {
@@ -95,14 +95,14 @@ static bool parse_raw_fix_line(const std::string& raw_line,
         return false;
     }
 
-	return true;
+    return true;
 }
 
 // Read the RAW FIX message
 // from file and parse it into
 // template_message.fields.
 bool fix_template_load(const std::string& file_path,FixTemplateMessage& template_message) {
-	std::ifstream input(file_path.c_str());
+    std::ifstream input(file_path.c_str());
     if (!input.is_open()) {
         return false;
     }
@@ -133,7 +133,7 @@ bool fix_template_apply(FixTemplateRuntime& runtime,
     bool is_set_time = false;
 
     // Overwrite header/runtime fields
-	// and fill 60 if blank
+    // and fill 60 if blank
     for (size_t i = 0; i < template_message.fields.size(); i++) {
         const int tag_value = template_message.fields[i].first;
         std::string& value_text = template_message.fields[i].second;
@@ -181,7 +181,7 @@ bool fix_template_apply(FixTemplateRuntime& runtime,
     }
 
     // ALWAYS overwrite CrossID, ClordID
-	// (ignore template values)
+    // (ignore template values)
     int clord_counter = 0;
     int cross_counter = 0;
 
