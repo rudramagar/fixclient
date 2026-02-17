@@ -331,6 +331,10 @@ int Application::run(const AppArgs& args) {
     uint64_t last_scenario_response_ms = 0;
     const uint64_t scenario_quiet_ms = 300ULL;
 
+    // Timeout on heartbaet
+    uint64_t scenario_sent_ms = 0;
+    const uint64_t scenario_first_response_timeout_ms = 5000ULL;
+
     char receive_buffer[receive_buffer_size];
 
     // Send Logon
@@ -412,11 +416,29 @@ int Application::run(const AppArgs& args) {
         socket.close();
         return 1;
     }
+    scenario_sent_ms = utils::get_monotonic_millis();
 
     // Main loop: keepalive + admin message handling
     logon_accepted = true;
     while (true) {
         const uint64_t now_ms = utils::get_monotonic_millis();
+
+        // If no business response at all 
+        // after sending scenarios
+        // logout
+        if (!logout_initiated && scenarios_sent && !scenario_response_started) {
+            if (now_ms - scenario_sent_ms >= scenario_first_response_timeout_ms) {
+                const std::string logout = fix.build_logout(outbound_seq, utils::get_utc_timestamp(), "");
+                if (!send_fix_message(socket, logout, last_send_ms)) {
+                    break;
+                }
+
+                outbound_seq++;
+                save_token(token_path, outbound_seq);
+                logout_initiated = true;
+                logout_start_ms = now_ms;
+            }
+        }
 
         // Check if there is no response
         // initate logout
