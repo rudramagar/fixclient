@@ -77,7 +77,6 @@ static bool process_inbound_message(TcpSocket& socket,
 
     if (!logon_accepted && msg_type == "A") {
         logon_accepted = true;
-        std::printf("Info: Logon accepted\n");
         return true;
     }
 
@@ -114,8 +113,6 @@ static bool process_inbound_message(TcpSocket& socket,
 
     // Logout (35=5) -> reply Logout and stop
     if (msg_type == "5") {
-        std::printf("Info: received logout\n");
-
         if (!logout_initiated) {
             const std::string logout = fix.build_logout(outbound_seq,
                                                     utils::get_utc_timestamp(),
