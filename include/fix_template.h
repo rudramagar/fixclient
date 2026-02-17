@@ -10,12 +10,23 @@ struct FixTemplateMessage {
     FixMessage::FieldList fields;
 };
 
+
+// Shared
+// same state across multiple
+// messages
+// e.g., 11=$(ORG_ClOrdID) and 41=$(ORG_ClOrdID)
+struct FixTemplateState {
+    std::string org_clord_id;
+};
+
 struct FixTemplateRuntime {
     std::string begin_string;
     std::string sender_comp_id;
     std::string target_comp_id;
     int msg_seq_num;
     std::string sending_time_utc;
+
+    FixTemplateState state;
 };
 
 bool fix_template_load(
@@ -24,7 +35,7 @@ bool fix_template_load(
 );
 
 bool fix_template_apply(
-        const FixTemplateRuntime& runtime,
+        FixTemplateRuntime& runtime,
         FixTemplateMessage& template_message
 );
 

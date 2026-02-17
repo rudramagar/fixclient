@@ -123,7 +123,7 @@ bool fix_template_load(const std::string& file_path,FixTemplateMessage& template
     return false;
 }
 
-bool fix_template_apply(const FixTemplateRuntime& runtime,
+bool fix_template_apply(FixTemplateRuntime& runtime,
                         FixTemplateMessage& template_message) {
 
     bool is_set_begin_string = false;
@@ -168,6 +168,16 @@ bool fix_template_apply(const FixTemplateRuntime& runtime,
             value_text = runtime.sending_time_utc;
             continue;
         }
+
+        // Replace Original ClOrdID
+        // placeholder 41:${ORG_CLRID}
+        if (tag_value == 41 && value_text == "${ORG_CLRID}") {
+            if (runtime.state.org_clord_id.empty()) {
+                runtime.state.org_clord_id = make_unique_id("CL", runtime.sending_time_utc, runtime.msg_seq_num, 1);
+            }
+            value_text = runtime.state.org_clord_id;
+            continue;
+        }
     }
 
     // ALWAYS overwrite CrossID, ClordID
@@ -180,8 +190,16 @@ bool fix_template_apply(const FixTemplateRuntime& runtime,
         std::string& value_text = template_message.fields[i].second;
 
         if (tag_value == 11) {
-            clord_counter++;
-            value_text = make_unique_id("CL", runtime.sending_time_utc, runtime.msg_seq_num, clord_counter);
+            if (value_text == "${ORG_CLRID}") {
+                if (runtime.state.org_clord_id.empty()) {
+                    runtime.state.org_clord_id = make_unique_id("CL", runtime.sending_time_utc, runtime.msg_seq_num, 1);
+                }
+                value_text = runtime.state.org_clord_id;
+            }
+            else {
+                clord_counter++;
+                value_text = make_unique_id("CL", runtime.sending_time_utc, runtime.msg_seq_num, clord_counter);
+            }
             continue;
         }
 
