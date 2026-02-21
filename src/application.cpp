@@ -20,9 +20,9 @@
 
 const int peer_closed = 0;
 const size_t receive_buffer_size = 4096;
-
 const int logon_timeout_seconds = 5;
 const int receive_timeout_millis = 200;
+static bool is_running_regression = false;
 
 static bool set_socket_recv_timeout(int sock_fd, int timeout_millis) {
     timeval tv;
@@ -44,7 +44,9 @@ static bool send_fix_message(TcpSocket& socket,
         return false;
     }
 
-    std::printf(">> %s\n", utils::to_pipe_delimited(message).c_str());
+    if (!is_running_regression) {
+        std::printf(">> %s\n", utils::to_pipe_delimited(message).c_str());
+    }
 
     if (!socket.send_bytes(message)) {
         return false;
@@ -68,7 +70,9 @@ static bool process_inbound_message(TcpSocket& socket,
                                     uint64_t& logout_start_ms,
                                     const std::string& token_path) {
 
-    std::printf("<< %s\n", utils::to_pipe_delimited(inbound_message).c_str());
+    if (!is_running_regression) {
+        std::printf("<< %s\n", utils::to_pipe_delimited(inbound_message).c_str());
+    }
 
     std::string msg_type;
     if (!utils::find_tag_value(inbound_message, "35=", msg_type)) {
@@ -481,15 +485,21 @@ int Application::run(const AppArgs& args) {
     // Send Scenarios/regression test
     // after logon is accepted
     if (args.is_test_mode) {
+        is_running_regression = true;
+
         if (!run_fix_regression(socket, fix_parser, fix,
                                 args.scenario_path,
                                 outbound_seq, last_send_ms, token_path,
                                 logon_accepted, scenarios_sent,
                                 scenario_response_started, last_scenario_response_ms,
                                 logout_initiated, logout_start_ms)) {
+
+            is_running_regression = false;
             socket.close();
             return 1;
         }
+
+        is_running_regression = false;
     }
     else { 
         if (!run_scenarios(socket, fix, config,
