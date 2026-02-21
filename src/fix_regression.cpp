@@ -39,13 +39,19 @@ static void print_details(const std::string& fix) {
 }
 
 static void build_clr_id(std::string clr_values[max_clr + 1], int scenario_index) {
+    (void)scenario_index;
+
     for (int i = 0; i <= max_clr; ++i) {
         clr_values[i].clear();
     }
 
-    const unsigned long long base =
-        static_cast<unsigned long long>(utils::get_monotonic_millis()) * 1000ULL +
-        static_cast<unsigned long long>(scenario_index % 1000);
+    static unsigned long long uniq = 0;
+    uniq++;
+
+    const unsigned long long now_ms =
+        static_cast<unsigned long long>(utils::get_monotonic_millis());
+
+    const unsigned long long base = now_ms * 1000000ULL + (uniq % 1000000ULL);
 
     for (int i = 1; i <= max_clr; ++i) {
         char buf[64];
@@ -61,13 +67,19 @@ static void parse_fields(const std::string& payload,
     fields.reserve(64);
     if (msg_type_out) msg_type_out->clear();
 
+    char delim = 0;
+    if (payload.find('|') != std::string::npos) delim = '|';
+    else if (payload.find(',') != std::string::npos) delim = ',';
+    else delim = 0;
+
     size_t pos = 0;
-    while (pos < payload.size()) {
-        size_t end = payload.find('|', pos);
+    while (pos <= payload.size()) {
+        size_t end = std::string::npos;
+        if (delim) end = payload.find(delim, pos);
         if (end == std::string::npos) end = payload.size();
 
         std::string token = utils::trim(payload.substr(pos, end - pos));
-        pos = (end < payload.size()) ? (end + 1) : end;
+        pos = (end < payload.size()) ? (end + 1) : (payload.size() + 1);
 
         if (token.empty()) continue;
 
@@ -130,8 +142,20 @@ static bool run_file(const std::string& file_path,
         }
 
         std::string cmd = utils::trim(line.substr(0, first_bar));
+        while (!cmd.empty()) {
+            const unsigned char c = static_cast<unsigned char>(cmd[0]);
+            if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')) break;
+            cmd.erase(0, 1);
+        }
+
+        while (!cmd.empty()) {
+            const unsigned char c = static_cast<unsigned char>(cmd[cmd.size() - 1]);
+            if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')) break;
+            cmd.erase(cmd.size() - 1, 1);
+        }
+
         for (size_t i = 0; i < cmd.size(); ++i) {
-            const char c = cmd[i];
+            const unsigned char c = static_cast<unsigned char>(cmd[i]);
             if (c >= 'a' && c <= 'z') cmd[i] = static_cast<char>(c - ('a' - 'A'));
         }
 
@@ -195,66 +219,71 @@ static bool run_file(const std::string& file_path,
             continue;
         }
 
-        if (cmd == "SND") {
-            FixMessage::FieldList raw;
-            std::string msg_type;
-            parse_fields(payload, raw, &msg_type);
-
-            FixMessage::FieldList body;
-            body.reserve(raw.size());
-
-            const std::string sending_time = utils::get_utc_timestamp();
-
-            for (size_t i = 0; i < raw.size(); ++i) {
-                const int tag = raw[i].first;
-                std::string value = raw[i].second;
-
-                if (tag == 35) continue;
-
-                // ignore header/trailer in file
-                if (tag == 8 || tag == 9 || tag == 10 || tag == 34 || tag == 49 || tag == 52 || tag == 56) {
-                    continue;
-                }
-
-                if (value.size() >= 4 && value[0] == 'c' && value[1] == 'l' && value[2] == 'r') {
-                    int n = 0;
-                    bool ok = true;
-                    for (size_t j = 3; j < value.size(); ++j) {
-                        const char ch = value[j];
-                        if (ch < '0' || ch > '9') { ok = false; break; }
-                        n = (n * 10) + (ch - '0');
-                    }
-                    if (ok && n >= 1 && n <= max_clr) {
-                        value = clr_values[n];
-                    }
-                }
-
-                if (tag == 60 && value.empty()) {
-                    value = sending_time;
-                }
-
-                body.push_back(std::make_pair(tag, value));
-            }
-
-            const std::string msg = fix.build_message(msg_type, outbound_seq, sending_time, body);
-            if (msg.empty()) {
-                std::printf("Error: failed to build SND message\n");
-                return false;
-            }
-
-            if (!socket.send_bytes(msg)) {
-                return false;
-            }
-
-            last_send_ms = utils::get_monotonic_millis();
-            outbound_seq++;
-            save_token(token_path, outbound_seq);
-            scenarios_sent = true;
-
-            step++;
-            std::printf("  %d  SEND: %s\n", step, payload.c_str());
-            continue;
-        }
+		if (cmd == "SND") {
+		    FixMessage::FieldList raw;
+		    std::string msg_type;
+		    parse_fields(payload, raw, &msg_type);
+		
+		    if (msg_type.empty()) {
+		        step++;
+		        std::printf("  %d  SEND: (ERROR missing 35)\n", step);
+		        scenario_ok = false;
+		        continue;
+		    }
+		
+		    const std::string now_utc = utils::get_utc_timestamp();
+		
+		    // Apply clrN and fill blanks (34/52/60)
+		    for (size_t i = 0; i < raw.size(); ++i) {
+		        const int tag = raw[i].first;
+		        std::string& value = raw[i].second;
+		
+		        // clrN replacement
+		        if (value.size() >= 4 && value[0] == 'c' && value[1] == 'l' && value[2] == 'r') {
+		            int n = 0;
+		            bool ok = true;
+		            for (size_t j = 3; j < value.size(); ++j) {
+		                const char ch = value[j];
+		                if (ch < '0' || ch > '9') { ok = false; break; }
+		                n = (n * 10) + (ch - '0');
+		            }
+		            if (ok && n >= 1 && n <= max_clr) {
+		                value = clr_values[n];
+		            }
+		        }
+		
+		        // fill blanks like v1
+		        if (tag == 34 && value.empty()) {
+		            char buf[32];
+		            std::snprintf(buf, sizeof(buf), "%d", outbound_seq);
+		            value = buf;
+		        }
+		        if (tag == 52 && value.empty()) value = now_utc;
+		        if (tag == 60 && value.empty()) value = now_utc;
+		    }
+		
+		    // Build raw FIX from ordered fields (preserves your scenario order)
+		    const std::string msg = fix.build_from_fields(raw);
+		    if (msg.empty()) {
+		        step++;
+		        std::printf("  %d  SEND: (ERROR build_from_fields failed)\n", step);
+		        scenario_ok = false;
+		        continue;
+		    }
+		
+		    if (!socket.send_bytes(msg)) {
+		        return false;
+		    }
+		
+		    last_send_ms = utils::get_monotonic_millis();
+		    outbound_seq++;
+		    save_token(token_path, outbound_seq);
+		    scenarios_sent = true;
+		
+		    step++;
+		    std::printf("  %d  SEND: %s\n", step, payload.c_str());
+		    continue;
+		}
 
         if (cmd == "TST") {
             FixMessage::FieldList expected;
@@ -315,7 +344,10 @@ static bool run_file(const std::string& file_path,
                 const bool has = utils::find_tag_value(msg, prefix, act_val);
 
                 bool match = false;
-                if (exp_text == "IGNORE") {
+				if (exp_text.empty()) {
+					match = true;
+				}	
+                else if (exp_text == "IGNORE") {
                     match = true;
                 } else if (exp_text == "NONE") {
                     match = (!has || act_val.empty() || act_val == "NONE");
@@ -323,7 +355,12 @@ static bool run_file(const std::string& file_path,
                     match = has && (act_val == exp_val);
                 }
 
-                std::printf("     %s   %d=%s,   ", match ? "OK" : "FAIL", tag, exp_text.c_str());
+                const char* show_exp = exp_text.c_str();
+                if (exp_text.size() >= 4 && exp_text[0]=='c' && exp_text[1]=='l' && exp_text[2]=='r') {
+                    show_exp = exp_val.c_str();
+                }
+                std::printf("     %s   %d=%s,   ", match ? "OK" : "FAIL", tag, show_exp);
+
                 if (!has) {
                     std::printf("%d=MISSING\n", tag);
                 } else {
