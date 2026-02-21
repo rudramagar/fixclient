@@ -28,9 +28,15 @@ bool read_next_business_message(TcpSocket& socket,
 
 const int timeout_test_ms = 3000;
 const int timeout_discard_ms = 500;
-
 const int max_clr = 50;
-const size_t recv_preview_max = 220;
+
+static void print_details(const std::string& fix) {
+    for (size_t i = 0; i < fix.size(); ++i) {
+        char ch = fix[i];
+        if (ch == '\x01') ch = '|';
+        std::putchar(ch);
+    }
+}
 
 static void build_clr_id(std::string clr_values[max_clr + 1], int scenario_index) {
     for (int i = 0; i <= max_clr; ++i) {
@@ -278,11 +284,9 @@ static bool run_file(const std::string& file_path,
                 continue;
             }
 
-            std::string recv_pipe = utils::to_pipe_delimited(msg);
-            if (recv_pipe.size() > recv_preview_max) {
-                recv_pipe = recv_pipe.substr(0, recv_preview_max) + "...|";
-            }
-            std::printf("  %d  RECV: %s\n", step, recv_pipe.c_str());
+            std::printf("  %d  RECV: ", step);
+            print_details(msg);
+            std::printf("\n");
 
             std::printf("     STATE,  EXPECTED,  RECEIVED\n");
 
