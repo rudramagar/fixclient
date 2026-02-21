@@ -269,25 +269,14 @@ bool read_next_business_message(TcpSocket& socket,
                                uint64_t& logout_start_ms,
                                int timeout_ms,
                                std::string& out_message) {
-
     out_message.clear();
+
     const uint64_t start_ms = utils::get_monotonic_millis();
     char receive_buffer[receive_buffer_size];
 
     while (utils::get_monotonic_millis() - start_ms < static_cast<uint64_t>(timeout_ms)) {
-        const int bytes_received = socket.receive_bytes(receive_buffer, sizeof(receive_buffer));
-        if (bytes_received == peer_closed) {
-            return false;
-        }
 
-        if (bytes_received == peer_closed) {
-            if (recv_timed_out()) {
-                continue;
-            }
-            return false;
-        }
-
-        fix_parser.append_bytes(receive_buffer, static_cast<size_t>(bytes_received));
+        // Drain already-buffered messages
         std::string inbound_message;
         while (fix_parser.read_next_message(inbound_message)) {
             if (!process_inbound_message(socket, fix, outbound_seq, last_send_ms,
@@ -317,11 +306,26 @@ bool read_next_business_message(TcpSocket& socket,
                 return true;
             }
         }
+
+        // No buffered messages -> read more bytes from socket
+        const int bytes_received = socket.receive_bytes(receive_buffer, sizeof(receive_buffer));
+
+        if (bytes_received == peer_closed) {
+            return false;
+        }
+
+        if (bytes_received < peer_closed) {
+            if (recv_timed_out()) {
+                continue;
+            }
+            return false;
+        }
+
+        fix_parser.append_bytes(receive_buffer, static_cast<size_t>(bytes_received));
     }
 
     return true;
 }
-
 
 int Application::run(const AppArgs& args) {
     ConfigParser config_parser;
