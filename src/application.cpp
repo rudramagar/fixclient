@@ -5,6 +5,7 @@
 #include "fix_template.h"
 #include "token_handler.h"
 #include "utils.h"
+#include "fix_regression.h"
 #include <cstdio>
 #include <string>
 #include <cstdint>
@@ -249,6 +250,75 @@ static bool run_scenarios(TcpSocket& socket, FixMessage& fix,
     return true;
 }
 
+bool read_next_business_message(TcpSocket& socket,
+                               FixParser& fix_parser,
+                               FixMessage& fix,
+                               int& outbound_seq,
+                               uint64_t& last_send_ms,
+                               const std::string& token_path,
+                               bool& logon_accepted,
+                               bool& stop_requested,
+                               bool scenarios_sent,
+                               bool& scenario_response_started,
+                               uint64_t& last_scenario_response_ms,
+                               bool& logout_initiated,
+                               uint64_t& logout_start_ms,
+                               int timeout_ms,
+                               std::string& out_message) {
+
+    out_message.clear();
+    const uint64_t start_ms = utils::get_monotonic_millis();
+    char receive_buffer[receive_buffer_size];
+
+    while (utils::get_monotonic_millis() - start_ms < static_cast<uint64_t>(timeout_ms)) {
+        const int bytes_received = socket.receive_bytes(receive_buffer, sizeof(receive_buffer));
+        if (bytes_received == peer_closed) {
+            return false;
+        }
+
+        if (bytes_received == peer_closed) {
+            if (recv_timed_out()) {
+                continue;
+            }
+            return false;
+        }
+
+        fix_parser.append_bytes(receive_buffer, static_cast<size_t>(bytes_received));
+        std::string inbound_message;
+        while (fix_parser.read_next_message(inbound_message)) {
+            if (!process_inbound_message(socket, fix, outbound_seq, last_send_ms,
+                                         inbound_message, logon_accepted, stop_requested,
+                                         scenarios_sent, scenario_response_started,
+                                         last_scenario_response_ms, logout_initiated,
+                                         logout_start_ms, token_path)) {
+                return false;
+            }
+
+            if (stop_requested) {
+                out_message = inbound_message;
+                return true;
+            }
+
+            std::string msg_type;
+            if (!utils::find_tag_value(inbound_message, "35=", msg_type)) {
+                continue;
+            }
+
+            const bool is_admin_msg =
+                (msg_type == "0" || msg_type == "1" || msg_type == "2" ||
+                 msg_type == "4" || msg_type == "A" || msg_type == "5");
+
+            if (!is_admin_msg) {
+                out_message = inbound_message;
+                return true;
+            }
+        }
+    }
+
+    return true;
+}
+
+
 int Application::run(const AppArgs& args) {
     ConfigParser config_parser;
     config_parser.load(args.config_path);
@@ -408,11 +478,28 @@ int Application::run(const AppArgs& args) {
         }
     }
 
-    // Send Scenarios after logon is accepted
-    if (!run_scenarios(socket, fix, config, args.scenario_path, outbound_seq, last_send_ms, scenarios_sent, token_path)) {
-        socket.close();
-        return 1;
+    // Send Scenarios/regression test
+    // after logon is accepted
+    if (args.is_test_mode) {
+        if (!run_fix_regression(socket, fix_parser, fix,
+                                args.scenario_path,
+                                outbound_seq, last_send_ms, token_path,
+                                logon_accepted, scenarios_sent,
+                                scenario_response_started, last_scenario_response_ms,
+                                logout_initiated, logout_start_ms)) {
+            socket.close();
+            return 1;
+        }
     }
+    else { 
+        if (!run_scenarios(socket, fix, config,
+                         args.scenario_path, outbound_seq,
+                         last_send_ms, scenarios_sent, token_path)) {
+            socket.close();
+            return 1;
+        }
+    }
+
     scenario_sent_ms = utils::get_monotonic_millis();
 
     // Main loop: keepalive + admin message handling

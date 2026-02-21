@@ -13,6 +13,7 @@ add_library(fixclient_core
     src/utils.cpp
     src/fix_template.cpp
     src/token_handler.cpp
+    src/fix_regression.cpp
 )
 target_include_directories(fixclient_core PUBLIC include)
 
