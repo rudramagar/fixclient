@@ -35,9 +35,13 @@ static void get_status_clr(const char* label, bool is_success) {
     const char* force = std::getenv("FORCE_COLOR");
     const bool force_color = (force && force[0] && force[0] != '0');
 
+    const bool any_tty =
+        (::isatty(::fileno(stdout)) == 1) ||
+        (::isatty(::fileno(stderr)) == 1);
+
     const bool use_color =
         force_color ||
-        ((::isatty(::fileno(stdout)) == 1) && (std::getenv("NO_COLOR") == nullptr));
+        (any_tty && (std::getenv("NO_COLOR") == nullptr));
 
     if (use_color) {
         std::printf(is_success ? "\x1b[32m" : "\x1b[31m");
@@ -235,8 +239,7 @@ static bool run_file(const std::string& file_path,
                 failed_names.push_back(scenario_name);
             }
 
-            std::printf("END %s  RESULT=", scenario_name.c_str());
-            get_status_clr(scenario_ok ? "PASS" : "FAIL", scenario_ok);
+            std::printf("END %s\n", scenario_name.c_str());
             std::printf("\n");
 
             in_scenario = false;
@@ -260,7 +263,7 @@ static bool run_file(const std::string& file_path,
             }
 
             step++;
-            std::printf("  %d  RCV\n", step);
+            std::printf("  %02d  RCV\n", step);
             continue;
         }
 
@@ -271,7 +274,7 @@ static bool run_file(const std::string& file_path,
 		
 		    if (msg_type.empty()) {
 		        step++;
-		        std::printf("  %d  SEND: (ERROR missing 35)\n", step);
+		        std::printf("  %02d  SEND: (ERROR missing 35)\n", step);
 		        scenario_ok = false;
 		        continue;
 		    }
@@ -311,7 +314,7 @@ static bool run_file(const std::string& file_path,
 		    const std::string msg = fix.build_from_fields(raw);
 		    if (msg.empty()) {
 		        step++;
-		        std::printf("  %d  SEND: (ERROR build_from_fields failed)\n", step);
+		        std::printf("  %02d  SEND: (ERROR build_from_fields failed)\n", step);
 		        scenario_ok = false;
 		        continue;
 		    }
@@ -326,16 +329,17 @@ static bool run_file(const std::string& file_path,
 		    scenarios_sent = true;
 		
 		    step++;
-		    std::printf("  %d  SEND: %s\n", step, payload.c_str());
+		    std::printf("  %02d  SEND: %s\n", step, payload.c_str());
 		    continue;
 		}
 
         if (cmd == "TST") {
             FixMessage::FieldList expected;
             parse_fields(payload, expected, 0);
+            const int table_indent = 6;
 
             step++;
-            std::printf("  %d  TEST: %s\n", step, payload.c_str());
+            std::printf("  %02d  TEST: %s\n", step, payload.c_str());
 
             std::string msg;
             bool stop_requested = false;
@@ -349,20 +353,20 @@ static bool run_file(const std::string& file_path,
                                             timeout_test_ms, msg)) {
                 return false;
             }
-
+    
             step++;
             if (msg.empty()) {
-                std::printf("  %d  RECV: (TIMEOUT)\n", step);
-                std::printf("     STATE,  EXPECTED,  RECEIVED\n");
+                std::printf("  %02d  RECV: (TIMEOUT)\n", step);
+                std::printf("%*s%-4s  %-40s  %s\n", table_indent, "", "STATE", "EXPECTED", "RECEIVED");
                 scenario_ok = false;
                 continue;
             }
 
-            std::printf("  %d  RECV: ", step);
+            std::printf("  %02d  RECV: ", step);
             print_details(msg);
             std::printf("\n");
 
-            std::printf("     %-4s  %-40s  %s\n", "STATE", "EXPECTED", "RECEIVED");
+            std::printf("%*s%-4s  %-40s  %s\n", table_indent, "", "STATE", "EXPECTED", "RECEIVED");
 
             for (size_t i = 0; i < expected.size(); ++i) {
                 const int tag = expected[i].first;
@@ -415,9 +419,9 @@ static bool run_file(const std::string& file_path,
                     std::snprintf(received_field, sizeof(received_field), "%d=%s", tag, act_val.c_str());
                 }
 
-                std::printf("     ");
+                std::printf("\t");
                 get_status_clr(match ? "OK" : "FAIL", match);
-                std::printf("  %-40s  %s\n", expected_field, received_field);
+                std::printf("\t%-40s\t %s\n", expected_field, received_field);
 
                 if (!match) scenario_ok = false;
             }
@@ -477,13 +481,13 @@ bool run_fix_regression(TcpSocket& socket,
     }
 
     std::printf("\n# OVER ALL SUMMARY\n");
-    std::printf("RUN:          %d\n", total_run);
-    std::printf("PASSED:       %d\n", total_passed);
+    std::printf("Total Scenarios:          %d\n", total_run);
+    std::printf("Total Passed:       %d\n", total_passed);
 
     if (total_failed == 0) {
-        std::printf("FAILD:        0.\n");
+        std::printf("Total Failed:        0.\n");
     } else {
-        std::printf("FAILED:       %d (", total_failed);
+        std::printf("Total Failed:       %d (", total_failed);
         for (size_t i = 0; i < failed_names.size(); ++i) {
             if (i) std::printf(", ");
             std::printf("%s", failed_names[i].c_str());
