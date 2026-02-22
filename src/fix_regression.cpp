@@ -189,6 +189,29 @@ static bool run_file(const std::string& file_path,
             : utils::trim(line.substr(second_bar + 1));
 
         if (cmd == "BGN") {
+            if (scenarios_sent) {
+                const int timeout_drain_ms = 5;
+                const int drain_max_reads = 50;
+
+                for (int i = 0; i < drain_max_reads; ++i) {
+                    std::string pending;
+                    bool stop_requested = false;
+
+                    if (!read_next_business_message(socket, fix_parser, fix,
+                                                    outbound_seq, last_send_ms, token_path,
+                                                    logon_accepted, stop_requested,
+                                                    scenarios_sent, scenario_response_started,
+                                                    last_scenario_response_ms, logout_initiated, logout_start_ms,
+                                                    timeout_drain_ms, pending)) {
+                        return false;
+                    }
+
+                    if (pending.empty()) {
+                        break;
+                    }
+                }
+            }
+
             scenario_index++;
             build_clr_id(clr_values, scenario_index);
 
