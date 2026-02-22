@@ -9,6 +9,7 @@
 #include <fstream>
 #include <algorithm>
 #include <dirent.h>
+#include <unistd.h>
 
 bool read_next_business_message(TcpSocket& socket,
                                FixParser& fix_parser,
@@ -29,6 +30,25 @@ bool read_next_business_message(TcpSocket& socket,
 const int timeout_test_ms = 3000;
 const int timeout_discard_ms = 500;
 const int max_clr = 50;
+
+static void get_status_clr(const char* label, bool is_success) {
+    const char* force = std::getenv("FORCE_COLOR");
+    const bool force_color = (force && force[0] && force[0] != '0');
+
+    const bool use_color =
+        force_color ||
+        ((::isatty(::fileno(stdout)) == 1) && (std::getenv("NO_COLOR") == nullptr));
+
+    if (use_color) {
+        std::printf(is_success ? "\x1b[32m" : "\x1b[31m");
+    }
+
+    std::printf("%-4s", label);
+
+    if (use_color) {
+        std::printf("\x1b[0m");
+    }
+}
 
 static void print_details(const std::string& fix) {
     for (size_t i = 0; i < fix.size(); ++i) {
@@ -187,12 +207,14 @@ static bool run_file(const std::string& file_path,
             total_run++;
             if (scenario_ok) {
                 total_passed++;
-                std::printf("END %s  RESULT=PASS\n", scenario_name.c_str());
             } else {
                 total_failed++;
                 failed_names.push_back(scenario_name);
-                std::printf("END %s  RESULT=FAIL\n", scenario_name.c_str());
             }
+
+            std::printf("END %s  RESULT=", scenario_name.c_str());
+            get_status_clr(scenario_ok ? "PASS" : "FAIL", scenario_ok);
+            std::printf("\n");
 
             in_scenario = false;
             continue;
@@ -317,7 +339,7 @@ static bool run_file(const std::string& file_path,
             print_details(msg);
             std::printf("\n");
 
-            std::printf("     STATE,  EXPECTED,  RECEIVED\n");
+            std::printf("     %-4s  %-40s  %s\n", "STATE", "EXPECTED", "RECEIVED");
 
             for (size_t i = 0; i < expected.size(); ++i) {
                 const int tag = expected[i].first;
@@ -359,13 +381,20 @@ static bool run_file(const std::string& file_path,
                 if (exp_text.size() >= 4 && exp_text[0]=='c' && exp_text[1]=='l' && exp_text[2]=='r') {
                     show_exp = exp_val.c_str();
                 }
-                std::printf("     %s   %d=%s,   ", match ? "OK" : "FAIL", tag, show_exp);
 
+                char expected_field[512];
+                std::snprintf(expected_field, sizeof(expected_field), "%d=%s", tag, show_exp);
+
+                char received_field[512];
                 if (!has) {
-                    std::printf("%d=MISSING\n", tag);
+                    std::snprintf(received_field, sizeof(received_field), "%d=MISSING", tag);
                 } else {
-                    std::printf("%d=%s\n", tag, act_val.c_str());
+                    std::snprintf(received_field, sizeof(received_field), "%d=%s", tag, act_val.c_str());
                 }
+
+                std::printf("     ");
+                get_status_clr(match ? "OK" : "FAIL", match);
+                std::printf("  %-40s  %s\n", expected_field, received_field);
 
                 if (!match) scenario_ok = false;
             }
