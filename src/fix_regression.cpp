@@ -33,25 +33,16 @@ const int timeout_discard_ms = 500;
 const int max_clr = 50;
 
 static void get_status_clr(const char* label, bool is_success) {
-    const char* force = std::getenv("FORCE_COLOR");
-    const bool force_color = (force && force[0] && force[0] != '0');
-
-    const bool any_tty =
-        (::isatty(::fileno(stdout)) == 1) ||
-        (::isatty(::fileno(stderr)) == 1);
-
     const bool use_color =
-        force_color ||
-        (any_tty && (std::getenv("NO_COLOR") == nullptr));
+        (std::getenv("NO_COLOR") == nullptr) &&
+        (::isatty(::fileno(stdout)) == 1);
+
+    std::printf("%s", RESET);
 
     if (use_color) {
-        std::printf(is_success ? "\x1b[32m" : "\x1b[31m");
-    }
-
-    std::printf("%-4s", label);
-
-    if (use_color) {
-        std::printf("\x1b[0m");
+        std::printf("%s%-4s%s", is_success ? GREEN : RED, label, RESET);
+    } else {
+        std::printf("%-4s", label);
     }
 }
 
@@ -351,6 +342,7 @@ static bool run_file(const std::string& file_path,
                 make_fix_field_name(send_line, raw[i].first, raw[i].second.c_str());
             }
 
+            std::printf("%s", RESET);
             std::printf("  %02d \tSEND: %s\n", step, send_line.c_str());
 		    continue;
 		}
@@ -368,6 +360,7 @@ static bool run_file(const std::string& file_path,
                 make_fix_field_name(tst_message, expected[i].first, expected[i].second.c_str());
             }
 
+            std::printf("%s", RESET);
             std::printf("  %02d  \tTEST:  %s\n", step, tst_message.c_str());
 
             std::string msg;
@@ -444,7 +437,9 @@ static bool run_file(const std::string& file_path,
                 std::printf("%*s", table_indent, "");
 
                 if (match) {
+                    std::printf("\t");
                     get_status_clr("OK", true);
+                    std::printf("%s", RESET);
                     std::printf("  %s\n", received_named.c_str());
                 }
                 else {
@@ -453,8 +448,10 @@ static bool run_file(const std::string& file_path,
                     make_fix_field_name(got_exp_name, tag, show_exp);
                     if (!got_exp_name.empty() && got_exp_name.back() == '|') got_exp_name.pop_back();
 
+                    std::printf("\t");
                     get_status_clr("FAIL", false);
 
+                    std::printf("%s", RESET);
                     std::printf("  %s != %s (EXPECTED)\n", received_named.c_str(), got_exp_name.c_str());
                     scenario_ok = false;
                 }
