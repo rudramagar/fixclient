@@ -1,5 +1,6 @@
 #include "fix_regression.h"
 #include "token_handler.h"
+#include "constants.h"
 #include "utils.h"
 #include <cstdio>
 #include <cstdlib>
@@ -60,6 +61,20 @@ static void print_details(const std::string& fix) {
         if (ch == '\x01') ch = '|';
         std::putchar(ch);
     }
+}
+
+static void make_fix_field_name(std::string& out_line, int tag, const char* value) {
+    const char* tag_name = fix_tag_name(tag);
+    const char* tag_value = value ? value : "";
+
+    char buf[512];
+    if (tag_name) {
+        std::snprintf(buf, sizeof(buf), "%s(%d)=%s|", tag_name, tag, tag_value);
+    }
+    else {
+        std::snprintf(buf, sizeof(buf), "%d=%s|", tag, tag_value);
+    }
+    out_line.append(buf);
 }
 
 static void build_clr_id(std::string clr_values[max_clr + 1], int scenario_index) {
@@ -263,7 +278,7 @@ static bool run_file(const std::string& file_path,
             }
 
             step++;
-            std::printf("  %02d  RCV\n", step);
+            std::printf("  %02d  \tRCV\n", step);
             continue;
         }
 
@@ -329,17 +344,31 @@ static bool run_file(const std::string& file_path,
 		    scenarios_sent = true;
 		
 		    step++;
-		    std::printf("  %02d  SEND: %s\n", step, payload.c_str());
+
+            std::string send_line;
+            send_line.reserve(raw.size() * 16);
+            for (size_t i = 0; i < raw.size(); ++i) {
+                make_fix_field_name(send_line, raw[i].first, raw[i].second.c_str());
+            }
+
+            std::printf("  %02d \tSEND: %s\n", step, send_line.c_str());
 		    continue;
 		}
 
         if (cmd == "TST") {
             FixMessage::FieldList expected;
             parse_fields(payload, expected, 0);
-            const int table_indent = 6;
+            const int table_indent = 9;
 
             step++;
-            std::printf("  %02d  TEST: %s\n", step, payload.c_str());
+
+            std::string tst_message;
+            tst_message.reserve(expected.size() * 16);
+            for (size_t i = 0; i < expected.size(); ++i) {
+                make_fix_field_name(tst_message, expected[i].first, expected[i].second.c_str());
+            }
+
+            std::printf("  %02d  \tTEST:  %s\n", step, tst_message.c_str());
 
             std::string msg;
             bool stop_requested = false;
@@ -356,17 +385,12 @@ static bool run_file(const std::string& file_path,
     
             step++;
             if (msg.empty()) {
-                std::printf("  %02d  RECV: (TIMEOUT)\n", step);
-                std::printf("%*s%-4s  %-40s  %s\n", table_indent, "", "STATE", "EXPECTED", "RECEIVED");
+                std::printf("  %02d  \tRECV: (TIMEOUT)\n", step);
                 scenario_ok = false;
                 continue;
             }
 
-            std::printf("  %02d  RECV: ", step);
-            print_details(msg);
-            std::printf("\n");
-
-            std::printf("%*s%-4s  %-40s  %s\n", table_indent, "", "STATE", "EXPECTED", "RECEIVED");
+            std::printf("%*sRECEIVED:\n", table_indent, "");
 
             for (size_t i = 0; i < expected.size(); ++i) {
                 const int tag = expected[i].first;
@@ -390,6 +414,7 @@ static bool run_file(const std::string& file_path,
                 std::snprintf(prefix, sizeof(prefix), "%d=", tag);
 
                 std::string act_val;
+                act_val.clear();
                 const bool has = utils::find_tag_value(msg, prefix, act_val);
 
                 bool match = false;
@@ -409,21 +434,30 @@ static bool run_file(const std::string& file_path,
                     show_exp = exp_val.c_str();
                 }
 
-                char expected_field[512];
-                std::snprintf(expected_field, sizeof(expected_field), "%d=%s", tag, show_exp);
+                const char* got_text = has ? act_val.c_str() : "MISSING";
 
-                char received_field[512];
-                if (!has) {
-                    std::snprintf(received_field, sizeof(received_field), "%d=MISSING", tag);
-                } else {
-                    std::snprintf(received_field, sizeof(received_field), "%d=%s", tag, act_val.c_str());
+                std::string received_named;
+                received_named.reserve(64);
+                make_fix_field_name(received_named, tag, got_text);
+                if (!received_named.empty() && received_named.back() == '|') received_named.pop_back();
+
+                std::printf("%*s", table_indent, "");
+
+                if (match) {
+                    get_status_clr("OK", true);
+                    std::printf("  %s\n", received_named.c_str());
                 }
+                else {
+                    std::string got_exp_name;
+                    got_exp_name.reserve(64);
+                    make_fix_field_name(got_exp_name, tag, show_exp);
+                    if (!got_exp_name.empty() && got_exp_name.back() == '|') got_exp_name.pop_back();
 
-                std::printf("\t");
-                get_status_clr(match ? "OK" : "FAIL", match);
-                std::printf("\t%-40s\t %s\n", expected_field, received_field);
+                    get_status_clr("FAIL", false);
 
-                if (!match) scenario_ok = false;
+                    std::printf("  %s != %s (EXPECTED)\n", received_named.c_str(), got_exp_name.c_str());
+                    scenario_ok = false;
+                }
             }
 
             continue;
