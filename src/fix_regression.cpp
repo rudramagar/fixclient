@@ -11,6 +11,9 @@
 #include <algorithm>
 #include <dirent.h>
 #include <unistd.h>
+#include <cstdarg>
+#include <ctime>
+#include <sys/stat.h>
 
 bool read_next_business_message(TcpSocket& socket,
                                FixParser& fix_parser,
@@ -31,18 +34,68 @@ bool read_next_business_message(TcpSocket& socket,
 const int timeout_test_ms = 3000;
 const int timeout_discard_ms = 500;
 const int max_clr = 50;
+static std::string log_begin_string;
+static std::string log_sender_comp_id;
+
+static void print_result_log(const char* format, ...) {
+    static FILE* result_log_file = 0;
+
+    if (!result_log_file) {
+        ::mkdir("results", 0755);
+
+        std::time_t now = std::time(0);
+        std::tm local_time;
+        localtime_r(&now, &local_time);
+
+        char log_path[256];
+        std::snprintf(log_path, sizeof(log_path), "results/%s_%s_REGRESSION_RESULT_%04d%02d%02d_%02d%02d%02d.log",
+                                       log_begin_string.c_str(), log_sender_comp_id.c_str(), local_time.tm_year + 1900,
+                                       local_time.tm_mon + 1, local_time.tm_mday + 1, local_time.tm_hour,
+                                       local_time.tm_min, local_time.tm_sec);
+
+        result_log_file = std::fopen(log_path, "w");
+    }
+
+    char formatted_text[8192];
+    va_list args;
+    va_start(args, format);
+    const int text_len = std::vsnprintf(formatted_text, sizeof(formatted_text), format, args);
+    va_end(args);
+
+    if (text_len <= 0) return;
+
+    std::fwrite(formatted_text, 1, static_cast<size_t>(text_len), stdout);
+
+    if (result_log_file) {
+        bool inside_ansi_code = false;
+        for (int i = 0; i < text_len; ++i) {
+            const char ch = formatted_text[i];
+
+            if (ch == '\033') {
+                inside_ansi_code = true;
+                continue;
+            }
+
+            if (inside_ansi_code) {
+                if (ch == 'm') inside_ansi_code = false;
+                continue;
+            }
+            std::fputc(ch, result_log_file);
+        }
+
+        std::fflush(result_log_file);
+    }
+}
 
 static void get_status_clr(const char* label, bool is_success) {
     const bool use_color =
         (std::getenv("NO_COLOR") == nullptr) &&
         (::isatty(::fileno(stdout)) == 1);
 
-    std::printf("%s", RESET);
-
     if (use_color) {
-        std::printf("%s%-4s%s", is_success ? GREEN : RED, label, RESET);
+        print_result_log("%s%-4s%s", is_success ? GREEN : RED, label, RESET);
     } else {
-        std::printf("%-4s", label);
+        print_result_log("%-4s", label);
     }
 }
 
@@ -342,8 +395,7 @@ static bool run_file(const std::string& file_path,
                 make_fix_field_name(send_line, raw[i].first, raw[i].second.c_str());
             }
 
-            std::printf("%s", RESET);
-            std::printf("  %02d \tSEND: %s\n", step, send_line.c_str());
+            print_result_log("  %02d \tSEND: %s\n", step, send_line.c_str());
 		    continue;
 		}
 
@@ -360,8 +412,7 @@ static bool run_file(const std::string& file_path,
                 make_fix_field_name(tst_message, expected[i].first, expected[i].second.c_str());
             }
 
-            std::printf("%s", RESET);
-            std::printf("  %02d  \tTEST:  %s\n", step, tst_message.c_str());
+            print_result_log("  %02d  \tTEST:  %s\n", step, tst_message.c_str());
 
             std::string msg;
             bool stop_requested = false;
@@ -383,7 +434,7 @@ static bool run_file(const std::string& file_path,
                 continue;
             }
 
-            std::printf("%*sRECEIVED:\n", table_indent, "");
+            print_result_log("%*sRECEIVED:\n", table_indent, "");
 
             for (size_t i = 0; i < expected.size(); ++i) {
                 const int tag = expected[i].first;
@@ -434,13 +485,11 @@ static bool run_file(const std::string& file_path,
                 make_fix_field_name(received_named, tag, got_text);
                 if (!received_named.empty() && received_named.back() == '|') received_named.pop_back();
 
-                std::printf("%*s", table_indent, "");
+                print_result_log("%*s", table_indent, "");
 
                 if (match) {
-                    std::printf("\t");
                     get_status_clr("OK", true);
-                    std::printf("%s", RESET);
-                    std::printf("  %s\n", received_named.c_str());
+                    print_result_log("  %s\n", received_named.c_str());
                 }
                 else {
                     std::string got_exp_name;
@@ -448,11 +497,8 @@ static bool run_file(const std::string& file_path,
                     make_fix_field_name(got_exp_name, tag, show_exp);
                     if (!got_exp_name.empty() && got_exp_name.back() == '|') got_exp_name.pop_back();
 
-                    std::printf("\t");
-                    get_status_clr("FAIL", false);
-
-                    std::printf("%s", RESET);
-                    std::printf("  %s != %s (EXPECTED)\n", received_named.c_str(), got_exp_name.c_str());
+                    print_result_log("%s%-4s  %s != %s <- (exp)\n", RED, "FAIL",
+                                     received_named.c_str(), got_exp_name.c_str(), RESET);
                     scenario_ok = false;
                 }
             }
@@ -481,6 +527,9 @@ bool run_fix_regression(TcpSocket& socket,
     int total_passed = 0;
     int total_failed = 0;
     std::vector<std::string> failed_names;
+    log_begin_string = fix.get_begin_string();
+    log_sender_comp_id = fix.get_sender_comp_id();
+
 
     std::vector<std::string> files;
     DIR* dir = ::opendir(scenarios_path.c_str());
@@ -511,20 +560,23 @@ bool run_fix_regression(TcpSocket& socket,
         }
     }
 
-    std::printf("\n# OVER ALL SUMMARY\n");
-    std::printf("Total Scenarios:          %d\n", total_run);
-    std::printf("Total Passed:       %d\n", total_passed);
+    print_result_log("\n# OVER ALL SUMMARY\n");
+    print_result_log("Total Scenarios:\t%d\n", total_run);
+    print_result_log("Total Passed:\t\t%d\n", total_passed);
 
     if (total_failed == 0) {
-        std::printf("Total Failed:        0.\n");
+        print_result_log("Total Failed:\t\t0\n");
+        print_result_log("All done!\n");
     } else {
-        std::printf("Total Failed:       %d (", total_failed);
+        std::printf("Total Failed:\t\t%d (", total_failed);
         for (size_t i = 0; i < failed_names.size(); ++i) {
-            if (i) std::printf(", ");
-            std::printf("%s", failed_names[i].c_str());
+            if (i) print_result_log(", ");
+            print_result_log("%s", failed_names[i].c_str());
         }
-        std::printf(")\n");
+        print_result_log(")\n");
     }
+
+    std::printf("\n");
 
     return ok && (total_failed == 0);
 }

@@ -57,6 +57,11 @@ public:
     // Ignores any 8/9/10 in the file and rebuilds
     std::string build_from_fields(const FieldList& ordered_fields) const;
 
+    // For Regression log file
+    const std::string& get_begin_string() const { return begin_string; }
+    const std::string& get_sender_comp_id() const { return sender_comp_id; }
+    const std::string& get_target_comp_id() const { return target_comp_id; }
+
 private:
     std::string begin_string;
     std::string sender_comp_id;

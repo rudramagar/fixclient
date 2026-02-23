@@ -1,8 +1,8 @@
 #ifndef CONSTANTS_H
 #define CONSTANTS_H
 
-static const char* const RED = "\x1b[31m";
-static const char* const GREEN = "\x1b[32m";
+static const char* const RED = "\x1b[38;5;210m";
+static const char* const GREEN = "\x1b[38;5;152m";
 static const char* const RESET = "\x1b[0m";
 
 static const int fix_tag_begin_string                   = 8;
