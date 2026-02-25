@@ -99,11 +99,16 @@ static void get_status_clr(const char* label, bool is_success) {
 }
 
 static void print_details(const std::string& fix) {
+    std::string printable;
+    printable.reserve(fix.size());
+
     for (size_t i = 0; i < fix.size(); ++i) {
         char ch = fix[i];
         if (ch == '\x01') ch = '|';
-        std::putchar(ch);
+        printable.push_back(ch);
     }
+
+    print_result_log("%s", printable.c_str());
 }
 
 static void make_fix_field_name(std::string& out_line, int tag, const char* value) {
@@ -431,6 +436,12 @@ static bool run_file(const std::string& file_path,
                 scenario_ok = false;
                 continue;
             }
+
+            // Print RAW FIX message received
+            // from server
+            print_result_log("  %02d\tRECV:  ", step);
+            print_details(msg);
+            print_result_log("\n");
 
             print_result_log("%*sRECEIVED:\n", table_indent, "");
 
