@@ -67,7 +67,6 @@ static bool process_inbound_message(TcpSocket& socket,
                                     bool& scenario_response_started,
                                     uint64_t& last_scenario_response_ms,
                                     bool& logout_initiated,
-                                    uint64_t& logout_start_ms,
                                     const std::string& token_path) {
 
     if (!is_running_regression) {
@@ -266,7 +265,6 @@ bool read_next_business_message(TcpSocket& socket,
                                bool& scenario_response_started,
                                uint64_t& last_scenario_response_ms,
                                bool& logout_initiated,
-                               uint64_t& logout_start_ms,
                                int timeout_ms,
                                std::string& out_message) {
     out_message.clear();
@@ -283,7 +281,7 @@ bool read_next_business_message(TcpSocket& socket,
                                          inbound_message, logon_accepted, stop_requested,
                                          scenarios_sent, scenario_response_started,
                                          last_scenario_response_ms, logout_initiated,
-                                         logout_start_ms, token_path)) {
+                                         token_path)) {
                 return false;
             }
 
@@ -470,7 +468,7 @@ int Application::run(const AppArgs& args) {
             if (!process_inbound_message(socket, fix, outbound_seq, last_send_ms,
                                          inbound_message, logon_accepted, stop_requested,
                                          scenarios_sent, scenario_response_started, last_scenario_response_ms,
-                                         logout_initiated, logout_start_ms, token_path)) {
+                                         logout_initiated, token_path)) {
                 socket.close();
                 return 1;
             }
@@ -496,7 +494,7 @@ int Application::run(const AppArgs& args) {
                                 outbound_seq, last_send_ms, token_path,
                                 logon_accepted, scenarios_sent,
                                 scenario_response_started, last_scenario_response_ms,
-                                logout_initiated, logout_start_ms)) {
+                                logout_initiated)) {
 
             is_running_regression = false;
             socket.close();
@@ -631,7 +629,7 @@ int Application::run(const AppArgs& args) {
             if (!process_inbound_message(socket, fix, outbound_seq, last_send_ms,
                                          inbound_message, logon_accepted, stop_requested,
                                          scenarios_sent, scenario_response_started, last_scenario_response_ms,
-                                         logout_initiated, logout_start_ms, token_path)) {
+                                         logout_initiated, token_path)) {
                 socket.close();
                 return 1;
             }

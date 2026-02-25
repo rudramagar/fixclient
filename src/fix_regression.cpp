@@ -27,7 +27,6 @@ bool read_next_business_message(TcpSocket& socket,
                                bool& scenario_response_started,
                                uint64_t& last_scenario_response_ms,
                                bool& logout_initiated,
-                               uint64_t& logout_start_ms,
                                int timeout_ms,
                                std::string& out_message);
 
@@ -193,7 +192,6 @@ static bool run_file(const std::string& file_path,
                      bool& scenario_response_started,
                      uint64_t& last_scenario_response_ms,
                      bool& logout_initiated,
-                     uint64_t& logout_start_ms,
                      int& total_run,
                      int& total_passed,
                      int& total_failed,
@@ -264,7 +262,7 @@ static bool run_file(const std::string& file_path,
                                                     outbound_seq, last_send_ms, token_path,
                                                     logon_accepted, stop_requested,
                                                     scenarios_sent, scenario_response_started,
-                                                    last_scenario_response_ms, logout_initiated, logout_start_ms,
+                                                    last_scenario_response_ms, logout_initiated,
                                                     timeout_drain_ms, pending)) {
                         return false;
                     }
@@ -316,7 +314,7 @@ static bool run_file(const std::string& file_path,
                                             logon_accepted, stop_requested,
                                             scenarios_sent,
                                             scenario_response_started, last_scenario_response_ms,
-                                            logout_initiated, logout_start_ms,
+                                            logout_initiated,
                                             timeout_discard_ms, msg)) {
                 return false;
             }
@@ -422,7 +420,7 @@ static bool run_file(const std::string& file_path,
                                             logon_accepted, stop_requested,
                                             scenarios_sent,
                                             scenario_response_started, last_scenario_response_ms,
-                                            logout_initiated, logout_start_ms,
+                                            logout_initiated,
                                             timeout_test_ms, msg)) {
                 return false;
             }
@@ -521,8 +519,7 @@ bool run_fix_regression(TcpSocket& socket,
                         bool& scenarios_sent,
                         bool& scenario_response_started,
                         uint64_t& last_scenario_response_ms,
-                        bool& logout_initiated,
-                        uint64_t& logout_start_ms) {
+                        bool& logout_initiated) {
     int total_run = 0;
     int total_passed = 0;
     int total_failed = 0;
@@ -553,7 +550,7 @@ bool run_fix_regression(TcpSocket& socket,
                       outbound_seq, last_send_ms, token_path,
                       logon_accepted, scenarios_sent,
                       scenario_response_started, last_scenario_response_ms,
-                      logout_initiated, logout_start_ms,
+                      logout_initiated,
                       total_run, total_passed, total_failed, failed_names)) {
             ok = false;
             break;

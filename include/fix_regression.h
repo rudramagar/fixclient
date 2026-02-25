@@ -19,7 +19,6 @@ bool run_fix_regression(TcpSocket& socket,
                         bool& scenarios_sent,
                         bool& scenario_response_started,
                         uint64_t& last_scenario_response_ms,
-                        bool& logout_initiated,
-                        uint64_t& logout_start_ms);
+                        bool& logout_initiated);
 
 #endif
