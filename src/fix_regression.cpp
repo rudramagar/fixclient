@@ -286,7 +286,7 @@ static bool run_file(const std::string& file_path,
             scenario_ok = true;
             step = 0;
 
-            std::printf("\nBEGIN %s\n", scenario_name.c_str());
+            print_result_log("\nBEGIN %s\n", scenario_name.c_str());
             continue;
         }
 
@@ -301,8 +301,8 @@ static bool run_file(const std::string& file_path,
                 failed_names.push_back(scenario_name);
             }
 
-            std::printf("END %s\n", scenario_name.c_str());
-            std::printf("\n");
+            print_result_log("END %s\n", scenario_name.c_str());
+            print_result_log("\n");
 
             in_scenario = false;
             continue;
