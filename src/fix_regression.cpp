@@ -165,7 +165,7 @@ static void parse_fields(const std::string& payload,
         if (delim) end = payload.find(delim, pos);
         if (end == std::string::npos) end = payload.size();
 
-        std::string token = utils::trim(payload.substr(pos, end - pos));
+        std::string token = payload.substr(pos, end - pos);
         pos = (end < payload.size()) ? (end + 1) : (payload.size() + 1);
 
         if (token.empty()) continue;
@@ -173,7 +173,7 @@ static void parse_fields(const std::string& payload,
         const size_t eq = token.find('=');
         if (eq == std::string::npos || eq == 0) continue;
 
-        const int tag = std::atoi(token.substr(0, eq).c_str());
+        const int tag = std::atoi(utils::trim(token.substr(0, eq)).c_str());
         if (tag <= 0) continue;
 
         const std::string val = token.substr(eq + 1);
