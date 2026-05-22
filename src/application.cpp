@@ -617,6 +617,11 @@ int Application::run(const AppArgs& args) {
             if (recv_timed_out()) {
                 continue;
             }
+            if (errno == ECONNRESET || errno == EPIPE) {
+                std::printf("Info: server disconnected\n");
+                break;
+            }
+
             std::printf("Error: receive failed\n");
             break;
         }
