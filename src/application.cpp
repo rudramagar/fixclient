@@ -524,15 +524,17 @@ int Application::run(const AppArgs& args) {
         // logout
         if (!logout_initiated && scenarios_sent && !scenario_response_started) {
             if (now_ms - scenario_sent_ms >= scenario_first_response_timeout_ms) {
-                const std::string logout = fix.build_logout(outbound_seq, utils::get_utc_timestamp(), "");
-                if (!send_fix_message(socket, logout, last_send_ms)) {
-                    break;
-                }
+                if (!args.live) {
+                    const std::string logout = fix.build_logout(outbound_seq, utils::get_utc_timestamp(), "");
+                    if (!send_fix_message(socket, logout, last_send_ms)) {
+                        break;
+                    }
 
-                outbound_seq++;
-                save_token(token_path, outbound_seq);
-                logout_initiated = true;
-                logout_start_ms = now_ms;
+                    outbound_seq++;
+                    save_token(token_path, outbound_seq);
+                    logout_initiated = true;
+                    logout_start_ms = now_ms;
+                }
             }
         }
 
@@ -540,16 +542,18 @@ int Application::run(const AppArgs& args) {
         // initate logout
         if (!logout_initiated && scenarios_sent && scenario_response_started) {
             if (now_ms - last_scenario_response_ms >= scenario_quiet_ms) {
-                const std::string logout = fix.build_logout(outbound_seq, utils::get_utc_timestamp(), "");
+                if (!args.live) {
+                    const std::string logout = fix.build_logout(outbound_seq, utils::get_utc_timestamp(), "");
 
-                if (!send_fix_message(socket, logout, last_send_ms)) {
-                    break;
+                    if (!send_fix_message(socket, logout, last_send_ms)) {
+                        break;
+                    }
+
+                    outbound_seq++;
+                    save_token(token_path, outbound_seq);
+                    logout_initiated = true;
+                    logout_start_ms = now_ms;
                 }
-
-                outbound_seq++;
-                save_token(token_path, outbound_seq);
-                logout_initiated = true;
-                logout_start_ms = now_ms;
             }
         }
 

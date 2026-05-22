@@ -9,6 +9,7 @@ struct AppArgs {
     std::string config_path = "config/config.yaml";
     std::string scenario_path = "scenarios";
     bool is_test_mode = false;
+    bool live = false;
 };
 
 class Application {

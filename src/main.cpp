@@ -12,6 +12,7 @@ static void usage(const char* program_name) {
             " -c <config>           config file (default: config/config.yaml)\n"
             " -s <scenario>         scenario file or directory (default: scenarios)\n"
             " -m, --mode test       validates expected scenarios\n"
+            " -l, --live            keep session live\n"
             " -h, --help            show help\n",
             program_name
     );
@@ -23,13 +24,14 @@ int main(int argc, char** argv) {
     static const struct option long_options[] = {
         {"help", no_argument, 0, 'h'},
         {"mode", required_argument, 0, 'm'},
+        {"live", no_argument, 0, 'l'},
         {0,0,0,0}
     };
 
     int option = 0;
     int long_index = 0;
 
-    while ((option = getopt_long(argc, argv, "u:c:s:m:h", long_options, &long_index)) != -1) {
+    while ((option = getopt_long(argc, argv, "u:c:s:m:hl", long_options, &long_index)) != -1) {
         switch (option) {
             case 'u':
                 args.session_name = optarg;
@@ -50,6 +52,10 @@ int main(int argc, char** argv) {
                     std::printf("Error: (-m|--mode) only supports: test\n");
                     return 1;
                 }
+                break;
+
+            case 'l':
+                args.live = true;
                 break;
 
             case 'h':
