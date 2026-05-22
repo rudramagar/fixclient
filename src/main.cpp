@@ -13,6 +13,7 @@ static void usage(const char* program_name) {
             " -s <scenario>         scenario file or directory (default: scenarios)\n"
             " -m, --mode test       validates expected scenarios\n"
             " -l, --live            keep session live\n"
+            " --store               store sent messages for resend scenarios\n"
             " -h, --help            show help\n",
             program_name
     );
@@ -25,6 +26,7 @@ int main(int argc, char** argv) {
         {"help", no_argument, 0, 'h'},
         {"mode", required_argument, 0, 'm'},
         {"live", no_argument, 0, 'l'},
+        {"store", no_argument, 0, 'S'},
         {0,0,0,0}
     };
 
@@ -56,6 +58,10 @@ int main(int argc, char** argv) {
 
             case 'l':
                 args.live = true;
+                break;
+
+            case 'S':
+                args.store = true;
                 break;
 
             case 'h':

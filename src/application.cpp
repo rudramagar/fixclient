@@ -11,18 +11,53 @@
 #include <cstdint>
 #include <sys/socket.h>
 #include <sys/time.h>
+#include <sys/stat.h>
 #include <errno.h>
 #include <sys/stat.h>
 #include <dirent.h>
 #include <vector>
 #include <algorithm>
 #include <fstream>
+#include <ctime>
 
 const int peer_closed = 0;
 const size_t receive_buffer_size = 4096;
 const int logon_timeout_seconds = 5;
 const int receive_timeout_millis = 200;
 static bool is_running_regression = false;
+static bool store_msgs_enabled = false;
+static std::string store_sender_comp_id;
+
+static void store_sent_message(const std::string& message) {
+    if (!store_msgs_enabled) return;
+
+    std::string seq_str;
+    if (!utils::find_tag_value(message, "34=", seq_str)) return;
+
+    const int seq = std::atoi(seq_str.c_str());
+    if (seq <= 0) return;
+
+    ::mkdir("store", 0755);
+
+    std::time_t now = std::time(0);
+    struct tm local_time;
+    localtime_r(&now, &local_time);
+
+    char path[256];
+    std::snprintf(path, sizeof(path), "store/%s_%04d%02d%02d.store",
+                  store_sender_comp_id.c_str(),
+                  local_time.tm_year + 1900,
+                  local_time.tm_mon + 1,
+                  local_time.tm_mday);
+
+    std::FILE* f = std::fopen(path, "a");
+    if (!f) return;
+
+    std::fprintf(f, "SEQ=%d|MSG=", seq);
+    std::fwrite(message.data(), 1, message.size(), f);
+    std::fprintf(f, "\n");
+    std::fclose(f);
+}
 
 static bool set_socket_recv_timeout(int sock_fd, int timeout_millis) {
     timeval tv;
@@ -53,6 +88,7 @@ static bool send_fix_message(TcpSocket& socket,
     }
 
     last_send_ms = utils::get_monotonic_millis();
+    store_sent_message(message);
     return true;
 }
 
@@ -360,6 +396,9 @@ int Application::run(const AppArgs& args) {
     fix.set_begin_string(config.begin_string);
     fix.set_sender_comp_id(config.sender_comp_id);
     fix.set_target_comp_id(config.target_comp_id);
+
+    store_msgs_enabled = args.store;
+    store_sender_comp_id = config.sender_comp_id;
 
     FixParser fix_parser;
 

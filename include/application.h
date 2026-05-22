@@ -10,6 +10,7 @@ struct AppArgs {
     std::string scenario_path = "scenarios";
     bool is_test_mode = false;
     bool live = false;
+    bool store = false;
 };
 
 class Application {
