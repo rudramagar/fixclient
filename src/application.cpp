@@ -15,6 +15,7 @@
 #include <errno.h>
 #include <sys/stat.h>
 #include <dirent.h>
+#include <cstring>
 #include <vector>
 #include <algorithm>
 #include <fstream>
@@ -57,6 +58,65 @@ static void store_sent_message(const std::string& message) {
     std::fwrite(message.data(), 1, message.size(), f);
     std::fprintf(f, "\n");
     std::fclose(f);
+}
+
+// Load stored message for re-send
+static std::string load_stored_message(int seq) {
+    if (store_sender_comp_id.empty()) return std::string();
+
+    // Find the store file for today or scan all store files
+    DIR* dir = ::opendir("store");
+    if (!dir) return std::string();
+
+    char prefix[128];
+    std::snprintf(prefix, sizeof(prefix), "%s_", store_sender_comp_id.c_str());
+    const size_t prefix_len = std::strlen(prefix);
+
+    // Collect matching store files
+    std::vector<std::string> store_files;
+    dirent* entry = 0;
+    while ((entry = ::readdir(dir)) != 0) {
+        const std::string name(entry->d_name);
+        if (name.size() > prefix_len &&
+            name.compare(0, prefix_len, prefix) == 0 &&
+            name.size() > 6 &&
+            name.compare(name.size() - 6, 6, ".store") == 0) {
+            store_files.push_back("store/" + name);
+        }
+    }
+    ::closedir(dir);
+
+    // Search newest files first
+    std::sort(store_files.begin(), store_files.end());
+
+    char seq_prefix[32];
+    std::snprintf(seq_prefix, sizeof(seq_prefix), "SEQ=%d|MSG=", seq);
+    const size_t seq_prefix_len = std::strlen(seq_prefix);
+
+    // Search from newest to oldest
+    for (int i = static_cast<int>(store_files.size()) - 1; i >= 0; --i) {
+        std::FILE* f = std::fopen(store_files[i].c_str(), "r");
+        if (!f) continue;
+
+        char line[8192];
+        std::string found;
+        while (std::fgets(line, sizeof(line), f)) {
+            if (std::strncmp(line, seq_prefix, seq_prefix_len) == 0) {
+                // Strip trailing newline
+                size_t len = std::strlen(line);
+                while (len > 0 && (line[len - 1] == '\n' || line[len - 1] == '\r')) {
+                    len--;
+                }
+                found = std::string(line + seq_prefix_len, len - seq_prefix_len);
+                break;
+            }
+        }
+        std::fclose(f);
+
+        if (!found.empty()) return found;
+    }
+
+    return std::string();
 }
 
 static bool set_socket_recv_timeout(int sock_fd, int timeout_millis) {
@@ -148,6 +208,108 @@ static bool process_inbound_message(TcpSocket& socket,
 
         outbound_seq++;
         save_token(token_path, outbound_seq);
+        return true;
+    }
+
+    // ResendRequest (35=2) -> Resend stored messages with PossDupFlag
+    if (msg_type == "2") {
+        std::string begin_str, end_str;
+        utils::find_tag_value(inbound_message, "7=", begin_str);
+        utils::find_tag_value(inbound_message, "16=", end_str);
+
+        const int begin_seq = std::atoi(begin_str.c_str());
+        const int end_seq = std::atoi(end_str.c_str());
+        const int actual_end = (end_seq == 0) ? (outbound_seq - 1) : end_seq;
+
+        int gap_start = -1;
+
+        for (int seq = begin_seq; seq <= actual_end; ++seq) {
+            const std::string stored = load_stored_message(seq);
+            bool is_resendable = false;
+
+            if (!stored.empty()) {
+                std::string orig_msg_type;
+                utils::find_tag_value(stored, "35=", orig_msg_type);
+
+                // Admin messages get gap-filled, not resent
+                if (orig_msg_type != "A" && orig_msg_type != "0" &&
+                    orig_msg_type != "1" && orig_msg_type != "2" &&
+                    orig_msg_type != "4" && orig_msg_type != "5") {
+                    is_resendable = true;
+                }
+            }
+
+            if (!is_resendable) {
+                // Accumulate into gap range
+                if (gap_start < 0) {
+                    gap_start = seq;
+                }
+                continue;
+            }
+
+            // Flush pending gap before resending
+            if (gap_start >= 0) {
+                const std::string gap_fill = fix.build_sequence_reset(
+                    gap_start, utils::get_utc_timestamp(), seq, true);
+
+                if (!send_fix_message(socket, gap_fill, last_send_ms)) {
+                    return false;
+                }
+                gap_start = -1;
+            }
+
+            // Resend the business message
+            std::string orig_sending_time;
+            utils::find_tag_value(stored, "52=", orig_sending_time);
+
+            std::string orig_msg_type;
+            utils::find_tag_value(stored, "35=", orig_msg_type);
+
+            FixMessage::FieldList body_fields;
+            body_fields.push_back(FixMessage::Field(43, "Y"));
+            body_fields.push_back(FixMessage::Field(122, orig_sending_time));
+
+            size_t pos = 0;
+            while (pos < stored.size()) {
+                size_t soh = stored.find('\x01', pos);
+                if (soh == std::string::npos) soh = stored.size();
+
+                const std::string field = stored.substr(pos, soh - pos);
+                pos = soh + 1;
+
+                const size_t eq = field.find('=');
+                if (eq == std::string::npos) continue;
+
+                const int tag = std::atoi(field.substr(0, eq).c_str());
+                const std::string val = field.substr(eq + 1);
+
+                if (tag == 8 || tag == 9 || tag == 10 || tag == 34 ||
+                    tag == 35 || tag == 49 || tag == 56 || tag == 52 ||
+                    tag == 43 || tag == 122) {
+                    continue;
+                }
+
+                body_fields.push_back(FixMessage::Field(tag, val));
+            }
+
+            const std::string resend = fix.build_message(
+                orig_msg_type, seq, utils::get_utc_timestamp(), body_fields);
+
+            if (!send_fix_message(socket, resend, last_send_ms)) {
+                return false;
+            }
+        }
+
+        // Flush any trailing gap
+        if (gap_start >= 0) {
+            const std::string gap_fill = fix.build_sequence_reset(
+                gap_start, utils::get_utc_timestamp(), actual_end + 1, true);
+
+            if (!send_fix_message(socket, gap_fill, last_send_ms)) {
+                return false;
+            }
+        }
+
         return true;
     }
 
