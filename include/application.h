@@ -11,6 +11,7 @@ struct AppArgs {
     bool is_test_mode = false;
     bool live = false;
     bool store = false;
+    bool recover = false;
 };
 
 class Application {

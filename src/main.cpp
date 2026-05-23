@@ -13,7 +13,8 @@ static void usage(const char* program_name) {
             " -s <scenario>         scenario file or directory (default: scenarios)\n"
             " -m, --mode test       validates expected scenarios\n"
             " -l, --live            keep session live\n"
-            " --store               store sent messages for resend scenarios\n"
+            " -S, --store               store sent messages for resend scenarios\n"
+            " -r, --recover         recover all dcopy msgs from 1 (begining)\n"
             " -h, --help            show help\n",
             program_name
     );
@@ -27,13 +28,14 @@ int main(int argc, char** argv) {
         {"mode", required_argument, 0, 'm'},
         {"live", no_argument, 0, 'l'},
         {"store", no_argument, 0, 'S'},
+        {"recover", no_argument, 0, 'r'},
         {0,0,0,0}
     };
 
     int option = 0;
     int long_index = 0;
 
-    while ((option = getopt_long(argc, argv, "u:c:s:m:hl", long_options, &long_index)) != -1) {
+    while ((option = getopt_long(argc, argv, "u:c:s:m:hlSr", long_options, &long_index)) != -1) {
         switch (option) {
             case 'u':
                 args.session_name = optarg;
@@ -62,6 +64,10 @@ int main(int argc, char** argv) {
 
             case 'S':
                 args.store = true;
+                break;
+
+            case 'r':
+                args.recover = true;
                 break;
 
             case 'h':

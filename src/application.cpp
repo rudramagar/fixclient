@@ -605,6 +605,10 @@ int Application::run(const AppArgs& args) {
     g_expected_incoming_seq = expected_incoming_seq;
     g_token_path = token_path;
 
+    if (args.recover) {
+        g_expected_incoming_seq = 1;
+    }
+
     //scenario logout state
     bool scenarios_sent = false;
     bool logout_initiated = false;
