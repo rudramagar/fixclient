@@ -693,6 +693,8 @@ int Application::run(const AppArgs& args) {
                 std::string logon_seq_str;
                 if (utils::find_tag_value(inbound_message, "34=", logon_seq_str)) {
                     const int logon_seq = std::atoi(logon_seq_str.c_str());
+
+                    // Incoming gap: request missing messages
                     if (logon_seq > g_expected_incoming_seq) {
                         const std::string resend_req = fix.build_resend_request(
                             outbound_seq, utils::get_utc_timestamp(),
@@ -705,6 +707,21 @@ int Application::run(const AppArgs& args) {
 
                         outbound_seq++;
                         save_token(token_path, outbound_seq, g_expected_incoming_seq);
+                    }
+
+                    // Sequence error: server sent lower seq than expected
+                    // disconnect to prevent data integrity issues
+                    if (logon_seq < g_expected_incoming_seq) {
+                        std::printf("Error: sequence too low, expected=%d received=%d\n",
+                                    g_expected_incoming_seq, logon_seq);
+
+                        const std::string logout = fix.build_logout(outbound_seq,
+                            utils::get_utc_timestamp(),
+                            "MsgSeqNum too low");
+
+                        send_fix_message(socket, logout, last_send_ms);
+                        socket.close();
+                        return 1;
                     }
                 }
             }
