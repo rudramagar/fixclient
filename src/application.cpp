@@ -681,6 +681,28 @@ int Application::run(const AppArgs& args) {
                 return 1;
             }
 
+            // Detect incoming sequence gap after logon accepted
+            if (logon_accepted) {
+                std::string logon_seq_str;
+                if (utils::find_tag_value(inbound_message, "34=", logon_seq_str)) {
+                    const int logon_seq = std::atoi(logon_seq_str.c_str());
+                    if (logon_seq > g_expected_incoming_seq) {
+                        const std::string resend_req = fix.build_resend_request(
+                            outbound_seq, utils::get_utc_timestamp(),
+                            g_expected_incoming_seq, 0);
+
+                        if (!send_fix_message(socket, resend_req, last_send_ms)) {
+                            socket.close();
+                            return 1;
+                        }
+
+                        outbound_seq++;
+                        save_token(token_path, outbound_seq, g_expected_incoming_seq);
+                    }
+                }
+            }
+
+            // Track incoming sequence number
             std::string recv_seq_str;
             if (utils::find_tag_value(inbound_message, "34=", recv_seq_str)) {
                 const int recv_seq = std::atoi(recv_seq_str.c_str());
@@ -860,6 +882,7 @@ int Application::run(const AppArgs& args) {
                 return 1;
             }
 
+            // Track incoming sequence number
             std::string recv_seq_str;
             if (utils::find_tag_value(inbound_message, "34=", recv_seq_str)) {
                 const int recv_seq = std::atoi(recv_seq_str.c_str());
