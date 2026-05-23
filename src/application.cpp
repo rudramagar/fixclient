@@ -28,6 +28,8 @@ const int receive_timeout_millis = 200;
 static bool is_running_regression = false;
 static bool store_msgs_enabled = false;
 static std::string store_sender_comp_id;
+static int g_expected_incoming_seq = 1;
+static std::string g_token_path;
 
 static void store_sent_message(const std::string& message) {
     if (!store_msgs_enabled) return;
@@ -207,7 +209,7 @@ static bool process_inbound_message(TcpSocket& socket,
         }
 
         outbound_seq++;
-        save_token(token_path, outbound_seq);
+        save_token(token_path, outbound_seq, g_expected_incoming_seq);
         return true;
     }
 
@@ -322,7 +324,7 @@ static bool process_inbound_message(TcpSocket& socket,
 
             send_fix_message(socket, logout, last_send_ms);
             outbound_seq++;
-            save_token(token_path, outbound_seq);
+            save_token(token_path, outbound_seq, g_expected_incoming_seq);
         }
 
         stop_requested = true;
@@ -444,7 +446,7 @@ static bool run_scenarios(TcpSocket& socket, FixMessage& fix,
 
             scenarios_sent = true;
             outbound_seq++;
-            save_token(token_path, outbound_seq);
+            save_token(token_path, outbound_seq, g_expected_incoming_seq);
         }
     }
 
@@ -575,6 +577,7 @@ int Application::run(const AppArgs& args) {
     int test_request_counter = 1;
 
     int outbound_seq = 1;
+    int expected_incoming_seq = 1;
 
     // Read Token(Sequence)
     // form file
@@ -586,12 +589,16 @@ int Application::run(const AppArgs& args) {
                     now_utc,
                     config.reset_on_logon,
                     outbound_seq,
+                    expected_incoming_seq,
                     token_path)) {
         
         std::printf("ERROR: Token read failed\n");
         socket.close();
         return 1;
     }
+
+    g_expected_incoming_seq = expected_incoming_seq;
+    g_token_path = token_path;
 
     //scenario logout state
     bool scenarios_sent = false;
@@ -623,7 +630,7 @@ int Application::run(const AppArgs& args) {
     }
 
     outbound_seq++;
-    save_token(token_path, outbound_seq);
+    save_token(token_path, outbound_seq, g_expected_incoming_seq);
 
     // Wait for Logon Ack (35=A)
     const uint64_t logon_start_ms = utils::get_monotonic_millis();
@@ -672,6 +679,15 @@ int Application::run(const AppArgs& args) {
                                          logout_initiated, token_path)) {
                 socket.close();
                 return 1;
+            }
+
+            std::string recv_seq_str;
+            if (utils::find_tag_value(inbound_message, "34=", recv_seq_str)) {
+                const int recv_seq = std::atoi(recv_seq_str.c_str());
+                if (recv_seq >= g_expected_incoming_seq) {
+                    g_expected_incoming_seq = recv_seq + 1;
+                    save_token(token_path, outbound_seq, g_expected_incoming_seq);
+                }
             }
 
             if (stop_requested) {
@@ -732,7 +748,7 @@ int Application::run(const AppArgs& args) {
                     }
 
                     outbound_seq++;
-                    save_token(token_path, outbound_seq);
+                    save_token(token_path, outbound_seq, g_expected_incoming_seq);
                     logout_initiated = true;
                     logout_start_ms = now_ms;
                 }
@@ -751,7 +767,7 @@ int Application::run(const AppArgs& args) {
                     }
 
                     outbound_seq++;
-                    save_token(token_path, outbound_seq);
+                    save_token(token_path, outbound_seq, g_expected_incoming_seq);
                     logout_initiated = true;
                     logout_start_ms = now_ms;
                 }
@@ -787,7 +803,7 @@ int Application::run(const AppArgs& args) {
                     }
 
                     outbound_seq++;
-                    save_token(token_path, outbound_seq);
+                    save_token(token_path, outbound_seq, g_expected_incoming_seq);
                     test_request_sent_ms = utils::get_monotonic_millis();
                 }
             }
@@ -803,7 +819,7 @@ int Application::run(const AppArgs& args) {
                 }
 
                 outbound_seq++;
-                save_token(token_path, outbound_seq);
+                save_token(token_path, outbound_seq, g_expected_incoming_seq);
             }
         }
 
@@ -842,6 +858,15 @@ int Application::run(const AppArgs& args) {
                                          logout_initiated, token_path)) {
                 socket.close();
                 return 1;
+            }
+
+            std::string recv_seq_str;
+            if (utils::find_tag_value(inbound_message, "34=", recv_seq_str)) {
+                const int recv_seq = std::atoi(recv_seq_str.c_str());
+                if (recv_seq >= g_expected_incoming_seq) {
+                    g_expected_incoming_seq = recv_seq + 1;
+                    save_token(token_path, outbound_seq, g_expected_incoming_seq);
+                }
             }
 
             if (stop_requested) {

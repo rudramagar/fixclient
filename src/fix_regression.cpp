@@ -387,7 +387,7 @@ static bool run_file(const std::string& file_path,
 		
 		    last_send_ms = utils::get_monotonic_millis();
 		    outbound_seq++;
-		    save_token(token_path, outbound_seq);
+            save_token(token_path, outbound_seq, 1);
 		    scenarios_sent = true;
 		
 		    step++;
