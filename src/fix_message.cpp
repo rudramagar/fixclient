@@ -93,22 +93,29 @@ std::string FixMessage::build_message(const std::string& msg_type,
 
 // Logon
 std::string FixMessage::build_logon(int msg_seq_num, const std::string& sending_time,
-                                    int heartbeat_interval, bool reset_seq_num) const {
+                                    int heartbeat_interval, bool reset_seq_num,
+                                    const std::string& username,
+                                    const std::string& password) const {
 
     FieldList fields;
-    fields.reserve(4);
+    fields.reserve(6);
 
-    // EncryptMethod=0 (NONE)
     fields.push_back(Field(98, "0"));
 
-    // HeartBtInt=<seconds>
     char hb_buf[32];
     std::snprintf(hb_buf, sizeof(hb_buf), "%d", heartbeat_interval);
     fields.push_back(Field(108, hb_buf));
 
-    // ResetSeeqNumFlag=Y
     if (reset_seq_num) {
         fields.push_back(Field(141, "Y"));
+    }
+
+    if (!username.empty()) {
+        fields.push_back(Field(553, username));
+    }
+
+    if (!password.empty()) {
+        fields.push_back(Field(554, password));
     }
 
     return build_message("A", msg_seq_num, sending_time, fields);

@@ -22,7 +22,9 @@ public:
 
     std::string build_logon(int msg_seq_num,
                             const std::string& sending_time,
-                            int heart_bt_int, bool reset_seq_num) const;
+                            int heart_bt_int, bool reset_seq_num,
+                            const std::string& username = "",
+                            const std::string& password = "") const;
     
     // 35=0 HeartBeat
     std::string build_heartbeat(int msg_seq_num,

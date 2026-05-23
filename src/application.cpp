@@ -564,6 +564,11 @@ int Application::run(const AppArgs& args) {
     store_msgs_enabled = args.store;
     store_sender_comp_id = config.sender_comp_id;
 
+    bool is_live = args.live;
+    if (!config.username.empty()) {
+        is_live = true;
+    }
+
     FixParser fix_parser;
 
     const uint64_t heartbeat_interval_ms =
@@ -622,7 +627,9 @@ int Application::run(const AppArgs& args) {
     const std::string logon = fix.build_logon(outbound_seq,
                                               utils::get_utc_timestamp(),
                                               config.heartbeat_interval,
-                                              config.reset_on_logon);
+                                              config.reset_on_logon,
+                                              config.username,
+                                              config.password);
 
     if (!send_fix_message(socket, logon, last_send_ms)) {
         socket.close();
@@ -743,11 +750,13 @@ int Application::run(const AppArgs& args) {
         is_running_regression = false;
     }
     else { 
-        if (!run_scenarios(socket, fix, config,
-                         args.scenario_path, outbound_seq,
-                         last_send_ms, scenarios_sent, token_path)) {
-            socket.close();
-            return 1;
+        if (config.username.empty()) {
+            if (!run_scenarios(socket, fix, config,
+                               args.scenario_path, outbound_seq,
+                               last_send_ms, scenarios_sent, token_path)) {
+                socket.close();
+                return 1;
+            }
         }
     }
 
@@ -763,7 +772,7 @@ int Application::run(const AppArgs& args) {
         // logout
         if (!logout_initiated && scenarios_sent && !scenario_response_started) {
             if (now_ms - scenario_sent_ms >= scenario_first_response_timeout_ms) {
-                if (!args.live) {
+                if (!is_live) {
                     const std::string logout = fix.build_logout(outbound_seq, utils::get_utc_timestamp(), "");
                     if (!send_fix_message(socket, logout, last_send_ms)) {
                         break;
@@ -781,7 +790,7 @@ int Application::run(const AppArgs& args) {
         // initate logout
         if (!logout_initiated && scenarios_sent && scenario_response_started) {
             if (now_ms - last_scenario_response_ms >= scenario_quiet_ms) {
-                if (!args.live) {
+                if (!is_live) {
                     const std::string logout = fix.build_logout(outbound_seq, utils::get_utc_timestamp(), "");
 
                     if (!send_fix_message(socket, logout, last_send_ms)) {
