@@ -537,11 +537,11 @@ int Application::run(const AppArgs& args) {
     }
 
     if (!socket.connect(config.host, config.port)) {
-        std::printf("Error: Connection failed\n");
+        std::printf("Failed to connect to %s:%d\n", config.host.c_str(), config.port);
         return 1;
     }
 
-    std::printf("Info: Connected to %s:%d\n", config.host.c_str(), config.port);
+    std::printf("Connected to %s:%d\n", config.host.c_str(), config.port);
 
     const int sock_fd = socket.get_fd();
     if (sock_fd < 0) {
