@@ -12,6 +12,8 @@ struct AppArgs {
     bool live = false;
     bool store = false;
     bool recover = false;
+    int recovery_start_seq = 1;
+    int recovery_count = 0;
 };
 
 class Application {

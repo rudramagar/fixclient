@@ -1,7 +1,10 @@
+
 #include "application.h"
 #include <cstdio>
 #include <getopt.h>
 #include <cstring>
+#include <cstdlib>
+#include <climits>
 
 static void usage(const char* program_name) {
     std::printf(
@@ -13,8 +16,10 @@ static void usage(const char* program_name) {
             " -s <scenario>         scenario file or directory (default: scenarios)\n"
             " -m, --mode test       validates expected scenarios\n"
             " -l, --live            keep session live\n"
-            " -S, --store               store sent messages for resend scenarios\n"
-            " -r, --recover         recover all dcopy msgs from 1 (begining)\n"
+            " -S, --store           store sent messages for resend scenarios\n"
+            " -r, --recover         enable Drop Copy recovery\n"
+            " -b, --begin-seq <seq> starting sequence (default: 1)\n"
+            " -n, --count <count>   number of sequences (default: all)\n"
             " -h, --help            show help\n",
             program_name
     );
@@ -29,13 +34,15 @@ int main(int argc, char** argv) {
         {"live", no_argument, 0, 'l'},
         {"store", no_argument, 0, 'S'},
         {"recover", no_argument, 0, 'r'},
+        {"begin-seq", required_argument, 0, 'b'},
+        {"count", required_argument, 0, 'n'},
         {0,0,0,0}
     };
 
     int option = 0;
     int long_index = 0;
 
-    while ((option = getopt_long(argc, argv, "u:c:s:m:hlSr", long_options, &long_index)) != -1) {
+    while ((option = getopt_long(argc, argv, "u:c:s:b:n:m:hlSr", long_options, &long_index)) != -1) {
         switch (option) {
             case 'u':
                 args.session_name = optarg;
@@ -70,6 +77,16 @@ int main(int argc, char** argv) {
                 args.recover = true;
                 break;
 
+            case 'b':
+                args.recovery_start_seq = std::atoi(optarg);
+                if (args.recovery_start_seq <= 0) return 1;
+                break;
+
+            case 'n':
+                args.recovery_count = std::atoi(optarg);
+                if (args.recovery_count <= 0) return 1;
+                break;
+
             case 'h':
                 usage(argv[0]);
                 return 0;
@@ -78,6 +95,12 @@ int main(int argc, char** argv) {
                 usage(argv[0]);
                 return 1;
         }
+    }
+
+    if (args.recover && args.recovery_count > 0 &&
+        args.recovery_start_seq > INT_MAX - (args.recovery_count - 1)) {
+        std::printf("Error: recovery sequence range exceeds INT_MAX\n");
+        return 1;
     }
 
     if (optind < argc) {

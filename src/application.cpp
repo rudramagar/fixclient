@@ -1,3 +1,4 @@
+
 #include "application.h"
 #include "config_parser.h"
 #include "fix_parser.h"
@@ -168,7 +169,7 @@ static bool process_inbound_message(TcpSocket& socket,
                                     const std::string& token_path) {
 
     if (!is_running_regression) {
-        std::printf("        %s  %s\n", "(in)", utils::to_pipe_delimited(inbound_message).c_str());
+        std::printf("        %s %s\n", "(in)", utils::to_pipe_delimited(inbound_message).c_str());
     }
 
     std::string msg_type;
@@ -425,6 +426,9 @@ static bool run_scenarios(TcpSocket& socket, FixMessage& fix,
                 }
 
                 template_message.fields.push_back(std::make_pair(tag_value, value_text));
+                if (value_text.empty()) {
+                    continue;
+                }
                 if (tag_value == 35 && template_message.msg_type.empty()) {
                     template_message.msg_type = value_text;
                 }
@@ -605,10 +609,6 @@ int Application::run(const AppArgs& args) {
     g_expected_incoming_seq = expected_incoming_seq;
     g_token_path = token_path;
 
-    if (args.recover) {
-        g_expected_incoming_seq = 1;
-    }
-
     //scenario logout state
     bool scenarios_sent = false;
     bool logout_initiated = false;
@@ -701,7 +701,7 @@ int Application::run(const AppArgs& args) {
                     const int logon_seq = std::atoi(logon_seq_str.c_str());
 
                     // Incoming gap: request missing messages
-                    if (logon_seq > g_expected_incoming_seq) {
+                    if (!args.recover && logon_seq > g_expected_incoming_seq) {
                         const std::string resend_req = fix.build_resend_request(
                             outbound_seq, utils::get_utc_timestamp(),
                             g_expected_incoming_seq, 0);
@@ -717,7 +717,7 @@ int Application::run(const AppArgs& args) {
 
                     // Sequence error: server sent lower seq than expected
                     // disconnect to prevent data integrity issues
-                    if (logon_seq < g_expected_incoming_seq) {
+                    if (!args.recover && logon_seq < g_expected_incoming_seq) {
                         std::printf("Error: sequence too low, expected=%d received=%d\n",
                                     g_expected_incoming_seq, logon_seq);
 
@@ -751,6 +751,23 @@ int Application::run(const AppArgs& args) {
                 break;
             }
         }
+    }
+
+    if (args.recover) {
+        const int end_seq = args.recovery_count > 0
+            ? args.recovery_start_seq + args.recovery_count - 1 : 0;
+    
+        const std::string request = fix.build_resend_request(
+            outbound_seq, utils::get_utc_timestamp(),
+            args.recovery_start_seq, end_seq);
+    
+        if (!send_fix_message(socket, request, last_send_ms)) {
+            socket.close();
+            return 1;
+        }
+    
+        outbound_seq++;
+        save_token(token_path, outbound_seq, g_expected_incoming_seq);
     }
 
     // Send Scenarios/regression test
@@ -877,33 +894,38 @@ int Application::run(const AppArgs& args) {
             }
         }
 
-        const int bytes_received = socket.receive_bytes(receive_buffer, sizeof(receive_buffer));
+        std::string inbound_message;
+        bool has_buffered = fix_parser.read_next_message(inbound_message);
 
-        if (bytes_received == peer_closed) {
-            std::printf("Info: peer closed\n");
-            break;
-        }
+        if (!has_buffered) {
+            const int bytes_received = socket.receive_bytes(receive_buffer, sizeof(receive_buffer));
 
-        if (bytes_received < peer_closed) {
-            if (recv_timed_out()) {
-                continue;
-            }
-            if (errno == ECONNRESET || errno == EPIPE) {
-                std::printf("Info: server disconnected\n");
+            if (bytes_received == peer_closed) {
+                std::printf("Info: peer closed\n");
                 break;
             }
 
-            std::printf("Error: receive failed\n");
-            break;
+            if (bytes_received < peer_closed) {
+                if (recv_timed_out()) {
+                    continue;
+                }
+                if (errno == ECONNRESET || errno == EPIPE) {
+                    std::printf("Info: server disconnected\n");
+                    break;
+                }
+
+                std::printf("Error: receive failed\n");
+                break;
+            }
+
+            last_recv_ms = utils::get_monotonic_millis();
+            test_request_sent_ms = 0;
+
+            fix_parser.append_bytes(receive_buffer, static_cast<size_t>(bytes_received));
         }
 
-        last_recv_ms = utils::get_monotonic_millis();
-        test_request_sent_ms = 0;
-
-        fix_parser.append_bytes(receive_buffer, static_cast<size_t>(bytes_received));
-
-        std::string inbound_message;
-        while (fix_parser.read_next_message(inbound_message)) {
+        while (has_buffered || fix_parser.read_next_message(inbound_message)) {
+            has_buffered = false;
             bool stop_requested = false;
 
             if (!process_inbound_message(socket, fix, outbound_seq, last_send_ms,
