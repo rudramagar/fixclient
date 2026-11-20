@@ -142,7 +142,7 @@ static bool send_fix_message(TcpSocket& socket,
     }
 
     if (!is_running_regression) {
-        std::printf(">> %s\n", utils::to_pipe_delimited(message).c_str());
+        std::printf("        %s %s\n", "(out)", utils::to_pipe_delimited(message).c_str());
     }
 
     if (!socket.send_bytes(message)) {
@@ -168,7 +168,7 @@ static bool process_inbound_message(TcpSocket& socket,
                                     const std::string& token_path) {
 
     if (!is_running_regression) {
-        std::printf("<< %s\n", utils::to_pipe_delimited(inbound_message).c_str());
+        std::printf("        %s  %s\n", "(in)", utils::to_pipe_delimited(inbound_message).c_str());
     }
 
     std::string msg_type;
@@ -626,6 +626,8 @@ int Application::run(const AppArgs& args) {
     const uint64_t scenario_first_response_timeout_ms = 5000ULL;
 
     char receive_buffer[receive_buffer_size];
+
+    std::printf("\nFIX Message Trace:\n");
 
     // Send Logon
     const std::string logon = fix.build_logon(outbound_seq,
